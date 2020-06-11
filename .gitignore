@@ -11,16 +11,12 @@ obj
 *.CodeAnalysisLog.xml
 *.lastcodeanalysissucceeded
 _ReSharper.*/
-
-# movies
-*.vqa
-
-# archives
-*.mix
+/.vs
 
 # binaries
 mods/*/*.dll
 mods/*/*.mdb
+mods/*/*.pdb
 /*.dll
 /*.dll.config
 /*.so
@@ -28,8 +24,9 @@ mods/*/*.mdb
 /*.pdb
 /*.mdb
 /*.exe
+/*.exe.config
 thirdparty/download/*
-*.mmdb.gz
+IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP
 
 # backup files by various editors
 *~
@@ -44,25 +41,14 @@ thirdparty/download/*
 # Mac OS X
 .DS_Store
 
-# XCode
-packaging/osx/launcher/build/
-packaging/osx/launcher/OpenRA.xcodeproj/*.pbxuser
-packaging/osx/launcher/OpenRA.xcodeproj/*.perspectivev3
-packaging/osx/launcher/OpenRA.xcodeproj/*.mode1v3
-temp.c
-temp.o
-temp.s
-OpenRA.Launcher.Mac/build/
-OpenRA.Launcher.Mac/OpenRA.xcodeproj/*.pbxuser
-OpenRA.Launcher.Mac/OpenRA.xcodeproj/*.perspectivev3
-OpenRA.Launcher.Mac/OpenRA.xcodeproj/*.mode1v3
-*.resources
-
 # auto-generated documentation
 DOCUMENTATION.md
+WEAPONS.md
 Lua-API.md
+Settings.md
 *.html
 openra.6
+update.log
 
 # StyleCop
 *.Cache
@@ -75,3 +61,9 @@ StyleCopViolations.xml
 # NUnit
 /TestResult.xml
 /lib/
+
+# Support directory
+/Support
+
+# IntelliJ files
+.idea

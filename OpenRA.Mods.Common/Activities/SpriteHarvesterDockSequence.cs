@@ -1,15 +1,17 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using OpenRA.Activities;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Mods.Common.Traits.Render;
 
 namespace OpenRA.Mods.Common.Activities
 {
@@ -25,28 +27,25 @@ namespace OpenRA.Mods.Common.Activities
 			wda = self.Info.TraitInfo<WithDockingAnimationInfo>();
 		}
 
-		public override Activity OnStateDock(Actor self)
+		public override void OnStateDock(Actor self)
 		{
 			foreach (var trait in self.TraitsImplementing<INotifyHarvesterAction>())
 				trait.Docked();
 
 			wsb.PlayCustomAnimation(self, wda.DockSequence, () => wsb.PlayCustomAnimationRepeating(self, wda.DockLoopSequence));
-			dockingState = State.Loop;
-			return this;
+			dockingState = DockingState.Loop;
 		}
 
-		public override Activity OnStateUndock(Actor self)
+		public override void OnStateUndock(Actor self)
 		{
 			wsb.PlayCustomAnimationBackwards(self, wda.DockSequence,
 				() =>
 				{
-					dockingState = State.Complete;
+					dockingState = DockingState.Complete;
 					foreach (var trait in self.TraitsImplementing<INotifyHarvesterAction>())
 						trait.Undocked();
 				});
-			dockingState = State.Wait;
-
-			return this;
+			dockingState = DockingState.Wait;
 		}
 	}
 }

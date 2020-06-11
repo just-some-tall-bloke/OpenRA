@@ -1,26 +1,33 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using OpenRA.Network;
+using OpenRA.Primitives;
 using OpenRA.Widgets;
 
 namespace OpenRA.Mods.Common.Widgets.Logic
 {
 	public class MainMenuLogic : ChromeLogic
 	{
-		protected enum MenuType { Main, Singleplayer, Extras, MapEditor, None }
+		protected enum MenuType { Main, Singleplayer, Extras, MapEditor, StartupPrompts, None }
+
+		protected enum MenuPanel { None, Missions, Skirmish, Multiplayer, MapEditor, Replays, GameSaves }
 
 		protected MenuType menuType = MenuType.Main;
 		readonly Widget rootMenu;
@@ -31,51 +38,53 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		// Update news once per game launch
 		static bool fetchedNews;
 
+		protected static MenuPanel lastGameState = MenuPanel.None;
+
+		bool newsOpen;
+
+		void SwitchMenu(MenuType type)
+		{
+			menuType = type;
+
+			// Update button mouseover
+			Game.RunAfterTick(Ui.ResetTooltips);
+		}
+
 		[ObjectCreator.UseCtor]
-		public MainMenuLogic(Widget widget, World world)
+		public MainMenuLogic(Widget widget, World world, ModData modData)
 		{
 			rootMenu = widget;
-			rootMenu.Get<LabelWidget>("VERSION_LABEL").Text = Game.ModData.Manifest.Mod.Version;
+			rootMenu.Get<LabelWidget>("VERSION_LABEL").Text = modData.Manifest.Metadata.Version;
 
 			// Menu buttons
 			var mainMenu = widget.Get("MAIN_MENU");
 			mainMenu.IsVisible = () => menuType == MenuType.Main;
 
-			mainMenu.Get<ButtonWidget>("SINGLEPLAYER_BUTTON").OnClick = () => menuType = MenuType.Singleplayer;
+			mainMenu.Get<ButtonWidget>("SINGLEPLAYER_BUTTON").OnClick = () => SwitchMenu(MenuType.Singleplayer);
 
-			mainMenu.Get<ButtonWidget>("MULTIPLAYER_BUTTON").OnClick = () =>
-			{
-				menuType = MenuType.None;
-				Ui.OpenWindow("MULTIPLAYER_PANEL", new WidgetArgs
-				{
-					{ "onStart", RemoveShellmapUI },
-					{ "onExit", () => menuType = MenuType.Main },
-					{ "directConnectHost", null },
-					{ "directConnectPort", 0 },
-				});
-			};
+			mainMenu.Get<ButtonWidget>("MULTIPLAYER_BUTTON").OnClick = OpenMultiplayerPanel;
 
-			mainMenu.Get<ButtonWidget>("MODS_BUTTON").OnClick = () =>
+			mainMenu.Get<ButtonWidget>("CONTENT_BUTTON").OnClick = () =>
 			{
 				// Switching mods changes the world state (by disposing it),
 				// so we can't do this inside the input handler.
 				Game.RunAfterTick(() =>
 				{
-					Game.Settings.Game.PreviousMod = Game.ModData.Manifest.Mod.Id;
-					Game.InitializeMod("modchooser", null);
+					var content = modData.Manifest.Get<ModContent>();
+					Game.InitializeMod(content.ContentInstallerMod, new Arguments(new[] { "Content.Mod=" + modData.Manifest.Id }));
 				});
 			};
 
 			mainMenu.Get<ButtonWidget>("SETTINGS_BUTTON").OnClick = () =>
 			{
-				menuType = MenuType.None;
+				SwitchMenu(MenuType.None);
 				Game.OpenWindow("SETTINGS_PANEL", new WidgetArgs
 				{
-					{ "onExit", () => menuType = MenuType.Main }
+					{ "onExit", () => SwitchMenu(MenuType.Main) }
 				});
 			};
 
-			mainMenu.Get<ButtonWidget>("EXTRAS_BUTTON").OnClick = () => menuType = MenuType.Extras;
+			mainMenu.Get<ButtonWidget>("EXTRAS_BUTTON").OnClick = () => SwitchMenu(MenuType.Extras);
 
 			mainMenu.Get<ButtonWidget>("QUIT_BUTTON").OnClick = Game.Exit;
 
@@ -84,115 +93,107 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			singleplayerMenu.IsVisible = () => menuType == MenuType.Singleplayer;
 
 			var missionsButton = singleplayerMenu.Get<ButtonWidget>("MISSIONS_BUTTON");
-			missionsButton.OnClick = () =>
-			{
-				menuType = MenuType.None;
-				Game.OpenWindow("MISSIONBROWSER_PANEL", new WidgetArgs
-				{
-					{ "onExit", () => menuType = MenuType.Singleplayer },
-					{ "onStart", RemoveShellmapUI }
-				});
-			};
+			missionsButton.OnClick = OpenMissionBrowserPanel;
 
-			var hasCampaign = Game.ModData.Manifest.Missions.Any();
-			var hasMissions = Game.ModData.MapCache
-				.Any(p => p.Status == MapStatus.Available && p.Map.Visibility.HasFlag(MapVisibility.MissionSelector));
+			var hasCampaign = modData.Manifest.Missions.Any();
+			var hasMissions = modData.MapCache
+				.Any(p => p.Status == MapStatus.Available && p.Visibility.HasFlag(MapVisibility.MissionSelector));
 
 			missionsButton.Disabled = !hasCampaign && !hasMissions;
 
-			singleplayerMenu.Get<ButtonWidget>("SKIRMISH_BUTTON").OnClick = StartSkirmishGame;
+			var hasMaps = modData.MapCache.Any(p => p.Visibility.HasFlag(MapVisibility.Lobby));
+			var skirmishButton = singleplayerMenu.Get<ButtonWidget>("SKIRMISH_BUTTON");
+			skirmishButton.OnClick = StartSkirmishGame;
+			skirmishButton.Disabled = !hasMaps;
 
-			singleplayerMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => menuType = MenuType.Main;
+			var loadButton = singleplayerMenu.Get<ButtonWidget>("LOAD_BUTTON");
+			loadButton.IsDisabled = () => !GameSaveBrowserLogic.IsLoadPanelEnabled(modData.Manifest);
+			loadButton.OnClick = OpenGameSaveBrowserPanel;
+
+			singleplayerMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => SwitchMenu(MenuType.Main);
 
 			// Extras menu
 			var extrasMenu = widget.Get("EXTRAS_MENU");
 			extrasMenu.IsVisible = () => menuType == MenuType.Extras;
 
-			extrasMenu.Get<ButtonWidget>("REPLAYS_BUTTON").OnClick = () =>
-			{
-				menuType = MenuType.None;
-				Ui.OpenWindow("REPLAYBROWSER_PANEL", new WidgetArgs
-				{
-					{ "onExit", () => menuType = MenuType.Extras },
-					{ "onStart", RemoveShellmapUI }
-				});
-			};
+			extrasMenu.Get<ButtonWidget>("REPLAYS_BUTTON").OnClick = OpenReplayBrowserPanel;
 
 			extrasMenu.Get<ButtonWidget>("MUSIC_BUTTON").OnClick = () =>
 			{
-				menuType = MenuType.None;
+				SwitchMenu(MenuType.None);
 				Ui.OpenWindow("MUSIC_PANEL", new WidgetArgs
 				{
-					{ "onExit", () => menuType = MenuType.Extras },
+					{ "onExit", () => SwitchMenu(MenuType.Extras) },
 					{ "world", world }
 				});
 			};
 
-			extrasMenu.Get<ButtonWidget>("MAP_EDITOR_BUTTON").OnClick = () => menuType = MenuType.MapEditor;
+			extrasMenu.Get<ButtonWidget>("MAP_EDITOR_BUTTON").OnClick = () => SwitchMenu(MenuType.MapEditor);
 
 			var assetBrowserButton = extrasMenu.GetOrNull<ButtonWidget>("ASSETBROWSER_BUTTON");
 			if (assetBrowserButton != null)
 				assetBrowserButton.OnClick = () =>
 				{
-					menuType = MenuType.None;
+					SwitchMenu(MenuType.None);
 					Game.OpenWindow("ASSETBROWSER_PANEL", new WidgetArgs
 					{
-						{ "onExit", () => menuType = MenuType.Extras },
+						{ "onExit", () => SwitchMenu(MenuType.Extras) },
 					});
 				};
 
 			extrasMenu.Get<ButtonWidget>("CREDITS_BUTTON").OnClick = () =>
 			{
-				menuType = MenuType.None;
+				SwitchMenu(MenuType.None);
 				Ui.OpenWindow("CREDITS_PANEL", new WidgetArgs
 				{
-					{ "onExit", () => menuType = MenuType.Extras },
+					{ "onExit", () => SwitchMenu(MenuType.Extras) },
 				});
 			};
 
-			extrasMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => menuType = MenuType.Main;
+			extrasMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => SwitchMenu(MenuType.Main);
 
 			// Map editor menu
 			var mapEditorMenu = widget.Get("MAP_EDITOR_MENU");
 			mapEditorMenu.IsVisible = () => menuType == MenuType.MapEditor;
 
-			var onSelect = new Action<string>(uid =>
-			{
-				RemoveShellmapUI();
-				LoadMapIntoEditor(Game.ModData.MapCache[uid].Map);
-			});
+			// Loading into the map editor
+			Game.BeforeGameStart += RemoveShellmapUI;
+
+			var onSelect = new Action<string>(uid => LoadMapIntoEditor(modData.MapCache[uid].Uid));
 
 			var newMapButton = widget.Get<ButtonWidget>("NEW_MAP_BUTTON");
 			newMapButton.OnClick = () =>
 			{
-				menuType = MenuType.None;
+				SwitchMenu(MenuType.None);
 				Game.OpenWindow("NEW_MAP_BG", new WidgetArgs()
 				{
 					{ "onSelect", onSelect },
-					{ "onExit", () => menuType = MenuType.MapEditor }
+					{ "onExit", () => SwitchMenu(MenuType.MapEditor) }
 				});
 			};
 
 			var loadMapButton = widget.Get<ButtonWidget>("LOAD_MAP_BUTTON");
 			loadMapButton.OnClick = () =>
 			{
-				menuType = MenuType.None;
+				SwitchMenu(MenuType.None);
 				Game.OpenWindow("MAPCHOOSER_PANEL", new WidgetArgs()
 				{
 					{ "initialMap", null },
 					{ "initialTab", MapClassification.User },
-					{ "onExit", () => menuType = MenuType.MapEditor },
+					{ "onExit", () => SwitchMenu(MenuType.MapEditor) },
 					{ "onSelect", onSelect },
 					{ "filter", MapVisibility.Lobby | MapVisibility.Shellmap | MapVisibility.MissionSelector },
 				});
 			};
 
-			mapEditorMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => menuType = MenuType.Extras;
+			loadMapButton.Disabled = !hasMaps;
+
+			mapEditorMenu.Get<ButtonWidget>("BACK_BUTTON").OnClick = () => SwitchMenu(MenuType.Extras);
 
 			var newsBG = widget.GetOrNull("NEWS_BG");
 			if (newsBG != null)
 			{
-				newsBG.IsVisible = () => Game.Settings.Game.FetchNews && menuType != MenuType.None;
+				newsBG.IsVisible = () => Game.Settings.Game.FetchNews && menuType != MenuType.None && menuType != MenuType.StartupPrompts;
 
 				newsPanel = Ui.LoadWidget<ScrollPanelWidget>("NEWS_PANEL", null, new WidgetArgs());
 				newsTemplate = newsPanel.Get("NEWS_ITEM_TEMPLATE");
@@ -200,47 +201,123 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 				newsStatus = newsPanel.Get<LabelWidget>("NEWS_STATUS");
 				SetNewsStatus("Loading news");
+			}
 
-				var cacheFile = Platform.ResolvePath("^", "news.yaml");
+			Game.OnRemoteDirectConnect += OnRemoteDirectConnect;
+
+			// Check for updates in the background
+			var webServices = modData.Manifest.Get<WebServices>();
+			if (Game.Settings.Debug.CheckVersion)
+				webServices.CheckModVersion();
+
+			var updateLabel = rootMenu.GetOrNull("UPDATE_NOTICE");
+			if (updateLabel != null)
+				updateLabel.IsVisible = () => !newsOpen && menuType != MenuType.None &&
+					menuType != MenuType.StartupPrompts &&
+					webServices.ModVersionStatus == ModVersionStatus.Outdated;
+
+			var playerProfile = widget.GetOrNull("PLAYER_PROFILE_CONTAINER");
+			if (playerProfile != null)
+			{
+				Func<bool> minimalProfile = () => Ui.CurrentWindow() != null;
+				Game.LoadWidget(world, "LOCAL_PROFILE_PANEL", playerProfile, new WidgetArgs()
+				{
+					{ "minimalProfile", minimalProfile }
+				});
+			}
+
+			menuType = MenuType.StartupPrompts;
+
+			Action onIntroductionComplete = () =>
+			{
+				Action onSysInfoComplete = () =>
+				{
+					LoadAndDisplayNews(webServices.GameNews, newsBG);
+					SwitchMenu(MenuType.Main);
+				};
+
+				if (SystemInfoPromptLogic.ShouldShowPrompt())
+				{
+					Ui.OpenWindow("MAINMENU_SYSTEM_INFO_PROMPT", new WidgetArgs
+					{
+						{ "onComplete", onSysInfoComplete }
+					});
+				}
+				else
+					onSysInfoComplete();
+			};
+
+			if (IntroductionPromptLogic.ShouldShowPrompt())
+			{
+				Game.OpenWindow("MAINMENU_INTRODUCTION_PROMPT", new WidgetArgs
+				{
+					{ "onComplete", onIntroductionComplete }
+				});
+			}
+			else
+				onIntroductionComplete();
+
+			Game.OnShellmapLoaded += OpenMenuBasedOnLastGame;
+		}
+
+		void LoadAndDisplayNews(string newsURL, Widget newsBG)
+		{
+			if (newsBG != null && Game.Settings.Game.FetchNews)
+			{
+				var cacheFile = Platform.ResolvePath(Platform.SupportDirPrefix, "news.yaml");
 				var currentNews = ParseNews(cacheFile);
 				if (currentNews != null)
 					DisplayNews(currentNews);
 
 				var newsButton = newsBG.GetOrNull<DropDownButtonWidget>("NEWS_BUTTON");
-
 				if (newsButton != null)
 				{
 					if (!fetchedNews)
-						new Download(Game.Settings.Game.NewsUrl, cacheFile, e => { },
-							(e, c) => NewsDownloadComplete(e, cacheFile, currentNews,
-							() => newsButton.AttachPanel(newsPanel)));
+					{
+						// Send the mod and engine version to support version-filtered news (update prompts)
+						newsURL += "?version={0}&mod={1}&modversion={2}".F(
+							Uri.EscapeUriString(Game.EngineVersion),
+							Uri.EscapeUriString(Game.ModData.Manifest.Id),
+							Uri.EscapeUriString(Game.ModData.Manifest.Metadata.Version));
 
-					newsButton.OnClick = () => newsButton.AttachPanel(newsPanel);
+						// Parameter string is blank if the player has opted out
+						newsURL += SystemInfoPromptLogic.CreateParameterString();
+
+						new Download(newsURL, cacheFile, e => { },
+							e => NewsDownloadComplete(e, cacheFile, currentNews,
+								() => OpenNewsPanel(newsButton)));
+					}
+
+					newsButton.OnClick = () => OpenNewsPanel(newsButton);
 				}
 			}
-
-			Game.OnRemoteDirectConnect += OnRemoteDirectConnect;
 		}
 
-		void OnRemoteDirectConnect(string host, int port)
+		void OpenNewsPanel(DropDownButtonWidget button)
 		{
-			menuType = MenuType.None;
+			newsOpen = true;
+			button.AttachPanel(newsPanel, () => newsOpen = false);
+		}
+
+		void OnRemoteDirectConnect(ConnectionTarget endpoint)
+		{
+			SwitchMenu(MenuType.None);
 			Ui.OpenWindow("MULTIPLAYER_PANEL", new WidgetArgs
 			{
 				{ "onStart", RemoveShellmapUI },
-				{ "onExit", () => menuType = MenuType.Main },
-				{ "directConnectHost", host },
-				{ "directConnectPort", port },
+				{ "onExit", () => SwitchMenu(MenuType.Main) },
+				{ "directConnectEndPoint", endpoint },
 			});
 		}
 
-		void LoadMapIntoEditor(Map map)
+		void LoadMapIntoEditor(string uid)
 		{
-			ConnectionLogic.Connect(System.Net.IPAddress.Loopback.ToString(),
-				Game.CreateLocalServer(map.Uid),
+			ConnectionLogic.Connect(Game.CreateLocalServer(uid),
 				"",
-				() => { Game.LoadEditor(map.Uid); },
-				() => { Game.CloseServer(); menuType = MenuType.MapEditor; });
+				() => { Game.LoadEditor(uid); },
+				() => { Game.CloseServer(); SwitchMenu(MenuType.MapEditor); });
+
+			lastGameState = MenuPanel.MapEditor;
 		}
 
 		void SetNewsStatus(string message)
@@ -341,35 +418,114 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			rootMenu.Parent.RemoveChild(rootMenu);
 		}
 
+		void StartSkirmishGame()
+		{
+			var map = Game.ModData.MapCache.ChooseInitialMap(Game.Settings.Server.Map, Game.CosmeticRandom);
+			Game.Settings.Server.Map = map;
+			Game.Settings.Save();
+
+			ConnectionLogic.Connect(Game.CreateLocalServer(map),
+				"",
+				OpenSkirmishLobbyPanel,
+				() => { Game.CloseServer(); SwitchMenu(MenuType.Main); });
+		}
+
+		void OpenMissionBrowserPanel()
+		{
+			SwitchMenu(MenuType.None);
+			Game.OpenWindow("MISSIONBROWSER_PANEL", new WidgetArgs
+			{
+				{ "onExit", () => SwitchMenu(MenuType.Singleplayer) },
+				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.Missions; } }
+			});
+		}
+
 		void OpenSkirmishLobbyPanel()
 		{
-			menuType = MenuType.None;
+			SwitchMenu(MenuType.None);
 			Game.OpenWindow("SERVER_LOBBY", new WidgetArgs
 			{
-				{ "onExit", () => { Game.Disconnect(); menuType = MenuType.Singleplayer; } },
-				{ "onStart", RemoveShellmapUI },
+				{ "onExit", () => { Game.Disconnect(); SwitchMenu(MenuType.Singleplayer); } },
+				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.Skirmish; } },
 				{ "skirmishMode", true }
 			});
 		}
 
-		void StartSkirmishGame()
+		void OpenMultiplayerPanel()
 		{
-			var map = WidgetUtils.ChooseInitialMap(Game.Settings.Server.Map);
-			Game.Settings.Server.Map = map;
-			Game.Settings.Save();
+			SwitchMenu(MenuType.None);
+			Ui.OpenWindow("MULTIPLAYER_PANEL", new WidgetArgs
+			{
+				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.Multiplayer; } },
+				{ "onExit", () => SwitchMenu(MenuType.Main) },
+				{ "directConnectEndPoint", null },
+			});
+		}
 
-			ConnectionLogic.Connect(IPAddress.Loopback.ToString(),
-				Game.CreateLocalServer(map),
-				"",
-				OpenSkirmishLobbyPanel,
-				() => { Game.CloseServer(); menuType = MenuType.Main; });
+		void OpenReplayBrowserPanel()
+		{
+			SwitchMenu(MenuType.None);
+			Ui.OpenWindow("REPLAYBROWSER_PANEL", new WidgetArgs
+			{
+				{ "onExit", () => SwitchMenu(MenuType.Extras) },
+				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.Replays; } }
+			});
+		}
+
+		void OpenGameSaveBrowserPanel()
+		{
+			SwitchMenu(MenuType.None);
+			Ui.OpenWindow("GAMESAVE_BROWSER_PANEL", new WidgetArgs
+			{
+				{ "onExit", () => SwitchMenu(MenuType.Singleplayer) },
+				{ "onStart", () => { RemoveShellmapUI(); lastGameState = MenuPanel.GameSaves; } },
+				{ "isSavePanel", false },
+				{ "world", null }
+			});
 		}
 
 		protected override void Dispose(bool disposing)
 		{
 			if (disposing)
+			{
 				Game.OnRemoteDirectConnect -= OnRemoteDirectConnect;
+				Game.BeforeGameStart -= RemoveShellmapUI;
+			}
+
+			Game.OnShellmapLoaded -= OpenMenuBasedOnLastGame;
 			base.Dispose(disposing);
+		}
+
+		void OpenMenuBasedOnLastGame()
+		{
+			switch (lastGameState)
+			{
+				case MenuPanel.Missions:
+					OpenMissionBrowserPanel();
+					break;
+
+				case MenuPanel.Replays:
+					OpenReplayBrowserPanel();
+					break;
+
+				case MenuPanel.Skirmish:
+					StartSkirmishGame();
+					break;
+
+				case MenuPanel.Multiplayer:
+					OpenMultiplayerPanel();
+					break;
+
+				case MenuPanel.MapEditor:
+					SwitchMenu(MenuType.MapEditor);
+					break;
+
+				case MenuPanel.GameSaves:
+					SwitchMenu(MenuType.Singleplayer);
+					break;
+			}
+
+			lastGameState = MenuPanel.None;
 		}
 	}
 }

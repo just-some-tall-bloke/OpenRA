@@ -1,26 +1,26 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
-using OpenRA.Widgets;
-
 namespace OpenRA.Mods.Common.Widgets
 {
-	public class MenuButtonWidget : ButtonWidget
+	public class MenuButtonWidget : WorldButtonWidget
 	{
 		public readonly string MenuContainer = "INGAME_MENU";
 		public readonly bool Pause = true;
 		public readonly bool HideIngameUI = true;
+		public readonly bool DisableWorldSounds = false;
 
 		[ObjectCreator.UseCtor]
-		public MenuButtonWidget(Ruleset modRules)
-			: base(modRules) { }
+		public MenuButtonWidget(ModData modData, World world)
+			: base(modData, world) { }
 
 		protected MenuButtonWidget(MenuButtonWidget other)
 			: base(other)

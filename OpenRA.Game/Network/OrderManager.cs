@@ -1,18 +1,19 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
 using OpenRA.Primitives;
+using OpenRA.Support;
 
 namespace OpenRA.Network
 {
@@ -27,29 +28,34 @@ namespace OpenRA.Network
 		public Session.Client LocalClient { get { return LobbyInfo.ClientWithIndex(Connection.LocalClientId); } }
 		public World World;
 
-		public readonly string Host;
-		public readonly int Port;
+		public readonly ConnectionTarget Endpoint;
 		public readonly string Password = "";
 
-		public string ServerError = "Server is not responding";
+		public string ServerError = null;
 		public bool AuthenticationFailed = false;
+		public ExternalMod ServerExternalMod = null;
 
 		public int NetFrameNumber { get; private set; }
 		public int LocalFrameNumber;
 		public int FramesAhead = 0;
 
-		public int LastTickTime = Game.RunTime;
+		public long LastTickTime = Game.RunTime;
 
 		public bool GameStarted { get { return NetFrameNumber != 0; } }
 		public IConnection Connection { get; private set; }
 
+		internal int GameSaveLastFrame = -1;
+		internal int GameSaveLastSyncFrame = -1;
+
 		List<Order> localOrders = new List<Order>();
+		List<Order> localImmediateOrders = new List<Order>();
 
 		List<ChatLine> chatCache = new List<ChatLine>();
 
 		public readonly ReadOnlyList<ChatLine> ChatCache;
 
 		bool disposed;
+		bool generateSyncReport = false;
 
 		void OutOfSync(int frame)
 		{
@@ -59,17 +65,23 @@ namespace OpenRA.Network
 
 		public void StartGame()
 		{
-			if (GameStarted) return;
+			if (GameStarted)
+				return;
+
+			// Generating sync reports is expensive, so only do it if we have
+			// other players to compare against if a desync did occur
+			generateSyncReport = !(Connection is ReplayConnection) && LobbyInfo.GlobalSettings.EnableSyncReports;
 
 			NetFrameNumber = 1;
-			for (var i = NetFrameNumber; i <= FramesAhead; i++)
-				Connection.Send(i, new List<byte[]>());
+
+			if (GameSaveLastFrame < 0)
+				for (var i = NetFrameNumber; i <= FramesAhead; i++)
+					Connection.Send(i, new List<byte[]>());
 		}
 
-		public OrderManager(string host, int port, string password, IConnection conn)
+		public OrderManager(ConnectionTarget endpoint, string password, IConnection conn)
 		{
-			Host = host;
-			Port = port;
+			Endpoint = endpoint;
 			Password = password;
 			Connection = conn;
 			syncReport = new SyncReport(this);
@@ -85,21 +97,23 @@ namespace OpenRA.Network
 
 		public void IssueOrder(Order order)
 		{
-			localOrders.Add(order);
+			if (order.IsImmediate)
+				localImmediateOrders.Add(order);
+			else
+				localOrders.Add(order);
 		}
 
-		public Action<Color, string, string> AddChatLine = (c, n, s) => { };
-		void CacheChatLine(Color color, string name, string text)
+		public Action<string, Color, string, Color> AddChatLine = (n, nc, s, tc) => { };
+		void CacheChatLine(string name, Color nameColor, string text, Color textColor)
 		{
-			chatCache.Add(new ChatLine(color, name, text));
+			chatCache.Add(new ChatLine(name, nameColor, text, textColor));
 		}
 
 		public void TickImmediate()
 		{
-			var immediateOrders = localOrders.Where(o => o.IsImmediate).ToList();
-			if (immediateOrders.Count != 0)
-				Connection.SendImmediate(immediateOrders.Select(o => o.Serialize()).ToList());
-			localOrders.RemoveAll(o => o.IsImmediate);
+			if (localImmediateOrders.Count != 0 && GameSaveLastFrame < NetFrameNumber + FramesAhead)
+				Connection.SendImmediate(localImmediateOrders.Select(o => o.Serialize()));
+			localImmediateOrders.Clear();
 
 			var immediatePackets = new List<Pair<int, byte[]>>();
 
@@ -107,9 +121,9 @@ namespace OpenRA.Network
 				(clientId, packet) =>
 				{
 					var frame = BitConverter.ToInt32(packet, 0);
-					if (packet.Length == 5 && packet[4] == 0xBF)
+					if (packet.Length == 5 && packet[4] == (byte)OrderType.Disconnect)
 						frameData.ClientQuit(clientId, frame);
-					else if (packet.Length >= 5 && packet[4] == 0x65)
+					else if (packet.Length >= 5 && packet[4] == (byte)OrderType.SyncHash)
 						CheckSync(packet);
 					else if (frame == 0)
 						immediatePackets.Add(Pair.New(clientId, packet));
@@ -170,15 +184,22 @@ namespace OpenRA.Network
 			if (!IsReadyForNextFrame)
 				throw new InvalidOperationException();
 
-			Connection.Send(NetFrameNumber + FramesAhead, localOrders.Select(o => o.Serialize()).ToList());
+			if (GameSaveLastFrame < NetFrameNumber + FramesAhead)
+				Connection.Send(NetFrameNumber + FramesAhead, localOrders.Select(o => o.Serialize()).ToList());
+
 			localOrders.Clear();
 
 			foreach (var order in frameData.OrdersForFrame(World, NetFrameNumber))
 				UnitOrders.ProcessOrder(this, World, order.Client, order.Order);
 
-			Connection.SendSync(NetFrameNumber, OrderIO.SerializeSync(World.SyncHash()));
+			if (NetFrameNumber + FramesAhead >= GameSaveLastSyncFrame)
+				Connection.SendSync(NetFrameNumber, OrderIO.SerializeSync(World.SyncHash()));
+			else
+				Connection.SendSync(NetFrameNumber, OrderIO.SerializeSync(0));
 
-			syncReport.UpdateSyncReport();
+			if (generateSyncReport)
+				using (new PerfSample("sync_report"))
+					syncReport.UpdateSyncReport();
 
 			++NetFrameNumber;
 		}
@@ -196,12 +217,14 @@ namespace OpenRA.Network
 		public readonly Color Color;
 		public readonly string Name;
 		public readonly string Text;
+		public readonly Color TextColor;
 
-		public ChatLine(Color c, string n, string t)
+		public ChatLine(string name, Color nameColor, string text, Color textColor)
 		{
-			Color = c;
-			Name = n;
-			Text = t;
+			Color = nameColor;
+			Name = name;
+			Text = text;
+			TextColor = textColor;
 		}
 	}
 }

@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -15,10 +16,13 @@ using OpenRA.Traits;
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("Actor has a limited amount of ammo, after using it all the actor must reload in some way.")]
-	public class AmmoPoolInfo : ITraitInfo
+	public class AmmoPoolInfo : TraitInfo
 	{
-		[Desc("Name of this ammo pool, used to link armaments to this pool.")]
+		[Desc("Name of this ammo pool, used to link reload traits to this pool.")]
 		public readonly string Name = "primary";
+
+		[Desc("Name(s) of armament(s) that use this pool.")]
+		public readonly string[] Armaments = { "primary", "secondary" };
 
 		[Desc("How much ammo does this pool contain when fully loaded.")]
 		public readonly int Ammo = 1;
@@ -26,113 +30,90 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Initial ammo the actor is created with. Defaults to Ammo.")]
 		public readonly int InitialAmmo = -1;
 
-		[Desc("Defaults to value in Ammo. 0 means no visible pips.")]
-		public readonly int PipCount = -1;
-
-		[Desc("PipType to use for loaded ammo.")]
-		public readonly PipType PipType = PipType.Green;
-
-		[Desc("PipType to use for empty ammo.")]
-		public readonly PipType PipTypeEmpty = PipType.Transparent;
-
 		[Desc("How much ammo is reloaded after a certain period.")]
 		public readonly int ReloadCount = 1;
 
 		[Desc("Sound to play for each reloaded ammo magazine.")]
 		public readonly string RearmSound = null;
 
+		// HACK: Temporarily kept until Rearm activity is gone for good
 		[Desc("Time to reload per ReloadCount on airfield etc.")]
-		public readonly int ReloadTicks = 25 * 2;
+		public readonly int ReloadDelay = 50;
 
-		[Desc("Whether or not ammo is replenished on its own.")]
-		public readonly bool SelfReloads = false;
+		[GrantedConditionReference]
+		[Desc("The condition to grant to self for each ammo point in this pool.")]
+		public readonly string AmmoCondition = null;
 
-		[Desc("Time to reload per ReloadCount when actor 'SelfReloads'.")]
-		public readonly int SelfReloadTicks = 25 * 2;
-
-		[Desc("Whether or not reload timer should be reset when ammo has been fired.")]
-		public readonly bool ResetOnFire = false;
-
-		public object Create(ActorInitializer init) { return new AmmoPool(init.Self, this); }
+		public override object Create(ActorInitializer init) { return new AmmoPool(init.Self, this); }
 	}
 
-	public class AmmoPool : INotifyAttack, IPips, ITick, ISync
+	public class AmmoPool : INotifyCreated, INotifyAttack, ISync
 	{
 		public readonly AmmoPoolInfo Info;
-		[Sync] public int CurrentAmmo;
-		[Sync] public int RemainingTicks;
-		public int PreviousAmmo;
+		readonly Stack<int> tokens = new Stack<int>();
+
+		// HACK: Temporarily needed until Rearm activity is gone for good
+		[Sync]
+		public int RemainingTicks;
+
+		[Sync]
+		public int CurrentAmmoCount { get; private set; }
+
+		public bool HasAmmo { get { return CurrentAmmoCount > 0; } }
+		public bool HasFullAmmo { get { return CurrentAmmoCount == Info.Ammo; } }
 
 		public AmmoPool(Actor self, AmmoPoolInfo info)
 		{
 			Info = info;
-			if (Info.InitialAmmo < Info.Ammo && Info.InitialAmmo >= 0)
-				CurrentAmmo = Info.InitialAmmo;
-			else
-				CurrentAmmo = Info.Ammo;
-
-			RemainingTicks = Info.SelfReloadTicks;
-			PreviousAmmo = GetAmmoCount();
+			CurrentAmmoCount = Info.InitialAmmo < Info.Ammo && Info.InitialAmmo >= 0 ? Info.InitialAmmo : Info.Ammo;
 		}
 
-		public int GetAmmoCount() { return CurrentAmmo; }
-		public bool FullAmmo() { return CurrentAmmo == Info.Ammo; }
-		public bool HasAmmo() { return CurrentAmmo > 0; }
-
-		public bool GiveAmmo()
+		public bool GiveAmmo(Actor self, int count)
 		{
-			if (CurrentAmmo >= Info.Ammo)
+			if (CurrentAmmoCount >= Info.Ammo || count < 0)
 				return false;
 
-			++CurrentAmmo;
+			CurrentAmmoCount = (CurrentAmmoCount + count).Clamp(0, Info.Ammo);
+			UpdateCondition(self);
 			return true;
 		}
 
-		public bool TakeAmmo()
+		public bool TakeAmmo(Actor self, int count)
 		{
-			if (CurrentAmmo <= 0)
+			if (CurrentAmmoCount <= 0 || count < 0)
 				return false;
 
-			--CurrentAmmo;
+			CurrentAmmoCount = (CurrentAmmoCount - count).Clamp(0, Info.Ammo);
+			UpdateCondition(self);
 			return true;
 		}
 
-		public void Attacking(Actor self, Target target, Armament a, Barrel barrel)
+		void INotifyCreated.Created(Actor self)
 		{
-			if (a != null && a.Info.AmmoPoolName == Info.Name)
-				TakeAmmo();
+			UpdateCondition(self);
+
+			// HACK: Temporarily needed until Rearm activity is gone for good
+			RemainingTicks = Info.ReloadDelay;
 		}
 
-		public void Tick(Actor self)
+		void INotifyAttack.Attacking(Actor self, Target target, Armament a, Barrel barrel)
 		{
-			if (!Info.SelfReloads)
+			if (a != null && Info.Armaments.Contains(a.Info.Name))
+				TakeAmmo(self, 1);
+		}
+
+		void INotifyAttack.PreparingAttack(Actor self, Target target, Armament a, Barrel barrel) { }
+
+		void UpdateCondition(Actor self)
+		{
+			if (string.IsNullOrEmpty(Info.AmmoCondition))
 				return;
 
-			// Resets the tick counter if ammo was fired.
-			if (Info.ResetOnFire && GetAmmoCount() < PreviousAmmo)
-			{
-				RemainingTicks = Info.SelfReloadTicks;
-				PreviousAmmo = GetAmmoCount();
-			}
+			while (CurrentAmmoCount > tokens.Count && tokens.Count < Info.Ammo)
+				tokens.Push(self.GrantCondition(Info.AmmoCondition));
 
-			if (!FullAmmo() && --RemainingTicks == 0)
-			{
-				RemainingTicks = Info.SelfReloadTicks;
-
-				for (var i = 0; i < Info.ReloadCount; i++)
-					GiveAmmo();
-
-				PreviousAmmo = GetAmmoCount();
-			}
-		}
-
-		public IEnumerable<PipType> GetPips(Actor self)
-		{
-			var pips = Info.PipCount >= 0 ? Info.PipCount : Info.Ammo;
-
-			return Enumerable.Range(0, pips).Select(i =>
-				(CurrentAmmo * pips) / Info.Ammo > i ?
-				Info.PipType : Info.PipTypeEmpty);
+			while (CurrentAmmoCount < tokens.Count && tokens.Count > 0)
+				self.RevokeCondition(tokens.Pop());
 		}
 	}
 }

@@ -1,19 +1,19 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
-using OpenRA.Support;
 using OpenRA.Traits;
 
-namespace OpenRA.Mods.Common.Traits
+namespace OpenRA.Mods.Common.Traits.Sound
 {
-	public class SoundOnDamageTransitionInfo : ITraitInfo
+	public class SoundOnDamageTransitionInfo : TraitInfo
 	{
 		[Desc("Play a random sound from this list when damaged.")]
 		public readonly string[] DamagedSounds = { };
@@ -21,7 +21,7 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Play a random sound from this list when destroyed.")]
 		public readonly string[] DestroyedSounds = { };
 
-		public object Create(ActorInitializer init) { return new SoundOnDamageTransition(this); }
+		public override object Create(ActorInitializer init) { return new SoundOnDamageTransition(this); }
 	}
 
 	public class SoundOnDamageTransition : INotifyDamageStateChanged
@@ -33,19 +33,19 @@ namespace OpenRA.Mods.Common.Traits
 			this.info = info;
 		}
 
-		public void DamageStateChanged(Actor self, AttackInfo e)
+		void INotifyDamageStateChanged.DamageStateChanged(Actor self, AttackInfo e)
 		{
 			var rand = Game.CosmeticRandom;
 
 			if (e.DamageState == DamageState.Dead)
 			{
 				var sound = info.DestroyedSounds.RandomOrDefault(rand);
-				Game.Sound.Play(sound, self.CenterPosition);
+				Game.Sound.Play(SoundType.World, sound, self.CenterPosition);
 			}
 			else if (e.DamageState >= DamageState.Heavy && e.PreviousDamageState < DamageState.Heavy)
 			{
 				var sound = info.DamagedSounds.RandomOrDefault(rand);
-				Game.Sound.Play(sound, self.CenterPosition);
+				Game.Sound.Play(SoundType.World, sound, self.CenterPosition);
 			}
 		}
 	}

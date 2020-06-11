@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -25,17 +26,17 @@ namespace OpenRA
 	{
 		public MouseInputEvent Event;
 		public MouseButton Button;
-		public int ScrollDelta;
 		public int2 Location;
+		public int2 Delta;
 		public Modifiers Modifiers;
 		public int MultiTapCount;
 
-		public MouseInput(MouseInputEvent ev, MouseButton button, int scrollDelta, int2 location, Modifiers mods, int multiTapCount)
+		public MouseInput(MouseInputEvent ev, MouseButton button, int2 location, int2 delta, Modifiers mods, int multiTapCount)
 		{
 			Event = ev;
 			Button = button;
-			ScrollDelta = scrollDelta;
 			Location = location;
+			Delta = delta;
 			Modifiers = mods;
 			MultiTapCount = multiTapCount;
 		}
@@ -68,5 +69,6 @@ namespace OpenRA
 		public Modifiers Modifiers;
 		public int MultiTapCount;
 		public char UnicodeChar;
+		public bool IsRepeat;
 	}
 }

@@ -1,24 +1,26 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
-using System.Drawing;
 using System.Linq;
 using OpenRA.Graphics;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("Creates a single color palette without any base palette file.")]
-	class PaletteFromRGBAInfo : ITraitInfo
+	class PaletteFromRGBAInfo : TraitInfo
 	{
-		[FieldLoader.Require, PaletteDefinition]
+		[PaletteDefinition]
+		[FieldLoader.Require]
 		[Desc("internal palette name")]
 		public readonly string Name = null;
 
@@ -39,7 +41,10 @@ namespace OpenRA.Mods.Common.Traits
 
 		public readonly bool AllowModifiers = true;
 
-		public object Create(ActorInitializer init) { return new PaletteFromRGBA(init.World, this); }
+		[Desc("Index set to be fully transparent/invisible.")]
+		public readonly int TransparentIndex = 0;
+
+		public override object Create(ActorInitializer init) { return new PaletteFromRGBA(init.World, this); }
 	}
 
 	class PaletteFromRGBA : ILoadsPalettes
@@ -63,7 +68,7 @@ namespace OpenRA.Mods.Common.Traits
 			var g = (int)(a * info.G + 0.5f).Clamp(0, 255);
 			var b = (int)(a * info.B + 0.5f).Clamp(0, 255);
 			var c = (uint)Color.FromArgb(info.A, r, g, b).ToArgb();
-			wr.AddPalette(info.Name, new ImmutablePalette(Enumerable.Range(0, Palette.Size).Select(i => (i == 0) ? 0 : c)), info.AllowModifiers);
+			wr.AddPalette(info.Name, new ImmutablePalette(Enumerable.Range(0, Palette.Size).Select(i => (i == info.TransparentIndex) ? 0 : c)), info.AllowModifiers);
 		}
 	}
 }

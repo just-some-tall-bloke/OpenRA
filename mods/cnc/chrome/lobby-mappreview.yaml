@@ -1,5 +1,5 @@
-Container@LOBBY_MAP_PREVIEW:
-	Logic: LobbyMapPreviewLogic
+Container@MAP_PREVIEW:
+	Logic: MapPreviewLogic
 	Width: PARENT_RIGHT
 	Height: PARENT_BOTTOM
 	Children:
@@ -15,23 +15,26 @@ Container@LOBBY_MAP_PREVIEW:
 						MapPreview@MAP_PREVIEW:
 							X: 1
 							Y: 1
-							Width: PARENT_RIGHT-2
-							Height: PARENT_BOTTOM-2
+							Width: PARENT_RIGHT - 2
+							Height: PARENT_BOTTOM - 2
 							TooltipContainer: TOOLTIP_CONTAINER
-				Label@MAP_TITLE:
-					Y: 172
+				LabelWithTooltip@MAP_TITLE:
+					Y: 173
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Bold
 					Align: Center
+					TooltipContainer: TOOLTIP_CONTAINER
+					TooltipTemplate: SIMPLE_TOOLTIP
 				Label@MAP_TYPE:
-					Y: 187
+					Y: 188
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: TinyBold
 					Align: Center
+					IgnoreMouseOver: true
 				Label@MAP_AUTHOR:
-					Y: 200
+					Y: 201
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
@@ -48,24 +51,27 @@ Container@LOBBY_MAP_PREVIEW:
 						MapPreview@MAP_PREVIEW:
 							X: 1
 							Y: 1
-							Width: PARENT_RIGHT-2
-							Height: PARENT_BOTTOM-2
+							Width: PARENT_RIGHT - 2
+							Height: PARENT_BOTTOM - 2
 							TooltipContainer: TOOLTIP_CONTAINER
-				Label@MAP_TITLE:
-					Y: 172
+				LabelWithTooltip@MAP_TITLE:
+					Y: 173
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Bold
 					Align: Center
+					TooltipContainer: TOOLTIP_CONTAINER
+					TooltipTemplate: SIMPLE_TOOLTIP
 				Label@MAP_STATUS_A:
-					Y: 187
+					Y: 188
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
 					Align: Center
 					Text: This map is not compatible
+					IgnoreMouseOver: true
 				Label@MAP_STATUS_B:
-					Y: 200
+					Y: 201
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
@@ -83,23 +89,26 @@ Container@LOBBY_MAP_PREVIEW:
 						MapPreview@MAP_PREVIEW:
 							X: 1
 							Y: 1
-							Width: PARENT_RIGHT-2
-							Height: PARENT_BOTTOM-2
+							Width: PARENT_RIGHT - 2
+							Height: PARENT_BOTTOM - 2
 							TooltipContainer: TOOLTIP_CONTAINER
-				Label@MAP_TITLE:
-					Y: 142
+				LabelWithTooltip@MAP_TITLE:
+					Y: 143
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Bold
 					Align: Center
+					TooltipContainer: TOOLTIP_CONTAINER
+					TooltipTemplate: SIMPLE_TOOLTIP
 				Label@MAP_TYPE:
-					Y: 157
+					Y: 158
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: TinyBold
 					Align: Center
+					IgnoreMouseOver: true
 				Label@MAP_AUTHOR:
-					Y: 170
+					Y: 171
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
@@ -121,48 +130,51 @@ Container@LOBBY_MAP_PREVIEW:
 						MapPreview@MAP_PREVIEW:
 							X: 1
 							Y: 1
-							Width: PARENT_RIGHT-2
-							Height: PARENT_BOTTOM-2
+							Width: PARENT_RIGHT - 2
+							Height: PARENT_BOTTOM - 2
 							TooltipContainer: TOOLTIP_CONTAINER
-				Label@MAP_TITLE:
-					Y: 142
+				LabelWithTooltip@MAP_TITLE:
+					Y: 143
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Bold
 					Align: Center
+					TooltipContainer: TOOLTIP_CONTAINER
+					TooltipTemplate: SIMPLE_TOOLTIP
 				Label@MAP_STATUS_SEARCHING:
-					Y: 157
+					Y: 158
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
 					Align: Center
 					Text: Searching OpenRA Resource Center...
+					IgnoreMouseOver: true
 				Container@MAP_STATUS_UNAVAILABLE:
 					Width: PARENT_RIGHT
 					Children:
 						Label@a:
-							Y: 157
+							Y: 158
 							Width: PARENT_RIGHT
 							Height: 25
 							Font: Tiny
 							Align: Center
 							Text: This map was not found on the
 						Label@b:
-							Y: 170
+							Y: 171
 							Width: PARENT_RIGHT
 							Height: 25
 							Font: Tiny
 							Align: Center
 							Text: OpenRA Resource Center
 				Label@MAP_STATUS_ERROR:
-					Y: 157
+					Y: 158
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
 					Align: Center
 					Text: An error occurred during installation
 				Label@MAP_STATUS_DOWNLOADING:
-					Y: 157
+					Y: 158
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Tiny
@@ -176,4 +188,3 @@ Container@LOBBY_MAP_PREVIEW:
 					Y: 194
 					Width: PARENT_RIGHT
 					Height: 25
-

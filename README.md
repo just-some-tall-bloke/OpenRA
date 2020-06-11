@@ -8,7 +8,7 @@ A Libre/Free Real Time Strategy game engine supporting early Westwood classics.
 
 Please read the [FAQ](http://wiki.openra.net/FAQ) in our [Wiki](http://wiki.openra.net) and report problems at [http://bugs.openra.net](http://bugs.openra.net).
 
-Join the [Forums](http://www.sleipnirstuff.com/forum/viewforum.php?f=80) for discussion.
+Join the [Forums](https://forum.openra.net/) for discussion.
 
 ## Play
 
@@ -22,13 +22,10 @@ Check our [Playing the Game](https://github.com/OpenRA/OpenRA/wiki/Playing-the-g
 
 ## Contribute
 
-[![Bountysource](https://api.bountysource.com/badge/team?team_id=528&style=bounties_received)](https://www.bountysource.com/teams/openra/issues?utm_source=OpenRA&utm_medium=shield&utm_campaign=bounties_received)
-
 * Please read [INSTALL.md](https://github.com/OpenRA/OpenRA/blob/bleed/INSTALL.md) and [Compiling](http://wiki.openra.net/Compiling) on how to set up an OpenRA development environment.
-* See [Hacking](http://wiki.openra.net/Hacking) for an overview of the engine.
+* See [Hacking](http://wiki.openra.net/Hacking) for a (now very outdated) overview of the engine.
+* Read and follow our [Code of Conduct](https://github.com/OpenRA/OpenRA/blob/bleed/CODE_OF_CONDUCT.md).
 * To get your patches merged, please adhere to the [Contributing](https://github.com/OpenRA/OpenRA/blob/bleed/CONTRIBUTING.md) guidelines.
-
-[![Issue Stats](http://issuestats.com/github/OpenRA/OpenRA/badge/pr)](http://issuestats.com/github/OpenRA/OpenRA) [![Issue Stats](http://issuestats.com/github/OpenRA/OpenRA/badge/issue)](http://issuestats.com/github/OpenRA/OpenRA)
 
 ## Mapping
 
@@ -38,8 +35,9 @@ Check our [Playing the Game](https://github.com/OpenRA/OpenRA/wiki/Playing-the-g
 
 ## Modding
 
-* There exists an auto-generated [Trait documentation](http://wiki.openra.net/Traits) to get started with yaml files.
+* Download a copy of the [OpenRA Mod SDK](https://github.com/OpenRA/OpenRAModSDK/) to start your own mod.
 * Check the [Modding Guide](http://wiki.openra.net/Modding-Guide) to create your own classic RTS.
+* There exists an auto-generated [Trait documentation](http://wiki.openra.net/Traits) to get started with yaml files.
 * Some hints on how to create new OpenRA compatible [Pixelart](http://wiki.openra.net/Pixelart).
 * Upload total conversions at [our ModDB profile](http://www.moddb.com/games/openra/mods).
 
@@ -47,11 +45,11 @@ Check our [Playing the Game](https://github.com/OpenRA/OpenRA/wiki/Playing-the-g
 
 * Sponsor a [mirror server](https://github.com/OpenRA/OpenRAWeb/tree/master/content/packages) if you have some bandwidth to spare.
 * You can immediately set up a [Dedicated](http://wiki.openra.net/Dedicated) Game Server.
-* Fund development by creating [Bounties](https://www.bountysource.com/trackers/36085-openra) on specific tasks.
 
 ## License
-Copyright 2007-2015 The OpenRA Developers (see [AUTHORS](https://github.com/OpenRA/OpenRA/blob/bleed/AUTHORS))
-This file is part of OpenRA, which is free software. It is made 
+Copyright 2007-2020 The OpenRA Developers (see [AUTHORS](https://github.com/OpenRA/OpenRA/blob/bleed/AUTHORS))
+This file is part of OpenRA, which is free software. It is made
 available to you under the terms of the GNU General Public License
-as published by the Free Software Foundation. For more information,
-see [COPYING](https://github.com/OpenRA/OpenRA/blob/bleed/COPYING).
+as published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version. For more
+information, see [COPYING](https://github.com/OpenRA/OpenRA/blob/bleed/COPYING).

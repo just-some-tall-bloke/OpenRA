@@ -1,22 +1,22 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
-using System.Drawing;
 using OpenRA.Graphics;
+using OpenRA.Primitives;
 using OpenRA.Widgets;
 
 namespace OpenRA.Mods.Common.Widgets
 {
 	public enum ResourceBarOrientation { Vertical, Horizontal }
-	public enum ResourceBarStyle { Flat, Bevelled }
 	public class ResourceBarWidget : Widget
 	{
 		public readonly string TooltipTemplate;
@@ -25,7 +25,6 @@ namespace OpenRA.Mods.Common.Widgets
 
 		public string TooltipFormat = "";
 		public ResourceBarOrientation Orientation = ResourceBarOrientation.Vertical;
-		public ResourceBarStyle Style = ResourceBarStyle.Flat;
 		public string IndicatorCollection = "sidebar-bits";
 		public string IndicatorImage = "indicator";
 
@@ -34,10 +33,12 @@ namespace OpenRA.Mods.Common.Widgets
 		public Func<Color> GetBarColor = () => Color.White;
 		EWMA providedLerp = new EWMA(0.3f);
 		EWMA usedLerp = new EWMA(0.3f);
+		readonly World world;
 
 		[ObjectCreator.UseCtor]
 		public ResourceBarWidget(World world)
 		{
+			this.world = world;
 			tooltipContainer = Exts.Lazy(() =>
 				Ui.Root.Get<TooltipContainerWidget>(TooltipContainer));
 		}
@@ -48,7 +49,7 @@ namespace OpenRA.Mods.Common.Widgets
 				return;
 
 			Func<string> getText = () => TooltipFormat.F(GetUsed(), GetProvided());
-			tooltipContainer.Value.SetTooltip(TooltipTemplate, new WidgetArgs() { { "getText", getText } });
+			tooltipContainer.Value.SetTooltip(TooltipTemplate, new WidgetArgs() { { "getText", getText }, { "world", world } });
 		}
 
 		public override void MouseExited()
@@ -76,29 +77,9 @@ namespace OpenRA.Mods.Common.Widgets
 			var color = GetBarColor();
 			if (Orientation == ResourceBarOrientation.Vertical)
 			{
-				if (Style == ResourceBarStyle.Bevelled)
-				{
-					var colorDark = Exts.ColorLerp(0.25f, color, Color.Black);
-					for (var i = 0; i < b.Height; i++)
-					{
-						color = (i - 1 < b.Height / 2) ? color : colorDark;
-						var bottom = new float2(b.Left + i, b.Bottom);
-						var top = new float2(b.Left + i, b.Bottom + providedFrac * b.Height);
-
-						// Indent corners
-						if ((i == 0 || i == b.Width - 1) && providedFrac * b.Height > 1)
-						{
-							bottom.Y += 1;
-							top.Y -= 1;
-						}
-
-						Game.Renderer.LineRenderer.DrawLine(bottom, top, color);
-					}
-				}
-				else
-					Game.Renderer.LineRenderer.FillRect(new Rectangle(
-						b.X, (int)float2.Lerp(b.Bottom, b.Top, providedFrac),
-						b.Width, (int)(providedFrac * b.Height)), color);
+				var tl = new float2(b.X, (int)float2.Lerp(b.Bottom, b.Top, providedFrac));
+				var br = tl + new float2(b.Width, (int)(providedFrac * b.Height));
+				Game.Renderer.RgbaColorRenderer.FillRect(tl, br, color);
 
 				var x = (b.Left + b.Right - indicator.Size.X) / 2;
 				var y = float2.Lerp(b.Bottom, b.Top, usedFrac) - indicator.Size.Y / 2;
@@ -106,27 +87,9 @@ namespace OpenRA.Mods.Common.Widgets
 			}
 			else
 			{
-				if (Style == ResourceBarStyle.Bevelled)
-				{
-					var colorDark = Exts.ColorLerp(0.25f, color, Color.Black);
-					for (var i = 0; i < b.Height; i++)
-					{
-						color = (i - 1 < b.Height / 2) ? color : colorDark;
-						var left = new float2(b.Left, b.Top + i);
-						var right = new float2(b.Left + providedFrac * b.Width, b.Top + i);
-
-						// Indent corners
-						if ((i == 0 || i == b.Height - 1) && providedFrac * b.Width > 1)
-						{
-							left.X += 1;
-							right.X -= 1;
-						}
-
-						Game.Renderer.LineRenderer.DrawLine(left, right, color);
-					}
-				}
-				else
-					Game.Renderer.LineRenderer.FillRect(new Rectangle(b.X, b.Y, (int)(providedFrac * b.Width), b.Height), color);
+				var tl = new float2(b.X, b.Y);
+				var br = tl + new float2((int)(providedFrac * b.Width), b.Height);
+				Game.Renderer.RgbaColorRenderer.FillRect(tl, br, color);
 
 				var x = float2.Lerp(b.Left, b.Right, usedFrac) - indicator.Size.X / 2;
 				var y = (b.Bottom + b.Top - indicator.Size.Y) / 2;

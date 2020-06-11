@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -12,7 +13,6 @@ using System;
 using Eluant;
 using OpenRA.Activities;
 using OpenRA.Scripting;
-using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Activities
 {
@@ -27,7 +27,7 @@ namespace OpenRA.Mods.Common.Activities
 			this.context = context;
 		}
 
-		public override Activity Tick(Actor self)
+		public override bool Tick(Actor self)
 		{
 			try
 			{
@@ -40,13 +40,14 @@ namespace OpenRA.Mods.Common.Activities
 			}
 
 			Dispose();
-			return NextActivity;
+			return true;
 		}
 
-		public override void Cancel(Actor self)
+		public override void Cancel(Actor self, bool keepQueue = false)
 		{
+			base.Cancel(self, keepQueue);
 			Dispose();
-			base.Cancel(self);
+			return;
 		}
 
 		public void Dispose()

@@ -1,21 +1,22 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
-using System.Drawing;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("Plays an audio notification and shows a radar ping when a building is attacked.",
 		"Attach this to the player actor.")]
-	public class BaseAttackNotifierInfo : ITraitInfo
+	public class BaseAttackNotifierInfo : TraitInfo
 	{
 		[Desc("Minimum duration (in seconds) between notification events.")]
 		public readonly int NotifyInterval = 30;
@@ -25,10 +26,16 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Length of time (in ticks) to display a location ping in the minimap.")]
 		public readonly int RadarPingDuration = 10 * 25;
 
+		[NotificationReference("Speech")]
 		[Desc("The audio notification type to play.")]
 		public string Notification = "BaseAttack";
 
-		public object Create(ActorInitializer init) { return new BaseAttackNotifier(init.Self, this); }
+		[NotificationReference("Speech")]
+		[Desc("The audio notification to play to allies when under attack.",
+			"Won't play a notification to allies if this is null.")]
+		public string AllyNotification = null;
+
+		public override object Create(ActorInitializer init) { return new BaseAttackNotifier(init.Self, this); }
 	}
 
 	public class BaseAttackNotifier : INotifyDamage
@@ -45,12 +52,8 @@ namespace OpenRA.Mods.Common.Traits
 			lastAttackTime = -info.NotifyInterval * 25;
 		}
 
-		public void Damaged(Actor self, AttackInfo e)
+		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
-			// only track last hit against our base
-			if (!self.Info.HasTraitInfo<BuildingInfo>())
-				return;
-
 			if (e.Attacker == null)
 				return;
 
@@ -60,12 +63,22 @@ namespace OpenRA.Mods.Common.Traits
 			if (e.Attacker == self.World.WorldActor)
 				return;
 
-			if (e.Attacker.Owner.IsAlliedWith(self.Owner) && e.Damage <= 0)
+			// Only track last hit against our base
+			if (!self.Info.HasTraitInfo<BuildingInfo>())
+				return;
+
+			if (e.Attacker.Owner.IsAlliedWith(self.Owner) && e.Damage.Value <= 0)
 				return;
 
 			if (self.World.WorldTick - lastAttackTime > info.NotifyInterval * 25)
 			{
-				Game.Sound.PlayNotification(self.World.Map.Rules, self.Owner, "Speech", info.Notification, self.Owner.Faction.InternalName);
+				var rules = self.World.Map.Rules;
+				Game.Sound.PlayNotification(rules, self.Owner, "Speech", info.Notification, self.Owner.Faction.InternalName);
+
+				if (info.AllyNotification != null)
+					foreach (Player p in self.World.Players)
+						if (p != self.Owner && p.IsAlliedWith(self.Owner) && p != e.Attacker.Owner)
+							Game.Sound.PlayNotification(rules, p, "Speech", info.AllyNotification, p.Faction.InternalName);
 
 				if (radarPings != null)
 					radarPings.Add(() => self.Owner.IsAlliedWith(self.World.RenderPlayer), self.CenterPosition, info.RadarPingColor, info.RadarPingDuration);

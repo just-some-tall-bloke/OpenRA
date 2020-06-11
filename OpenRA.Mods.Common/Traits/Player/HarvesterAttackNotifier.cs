@@ -1,21 +1,22 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
-using System.Drawing;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("Plays an audio notification and shows a radar ping when a harvester is attacked.",
 		"Attach this to the player actor.")]
-	public class HarvesterAttackNotifierInfo : ITraitInfo
+	public class HarvesterAttackNotifierInfo : TraitInfo
 	{
 		[Desc("Minimum duration (in seconds) between notification events.")]
 		public readonly int NotifyInterval = 30;
@@ -25,10 +26,11 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Length of time (in ticks) to display a location ping in the minimap.")]
 		public readonly int RadarPingDuration = 10 * 25;
 
+		[NotificationReference("Speech")]
 		[Desc("The audio notification type to play.")]
 		public string Notification = "HarvesterAttack";
 
-		public object Create(ActorInitializer init) { return new HarvesterAttackNotifier(init.Self, this); }
+		public override object Create(ActorInitializer init) { return new HarvesterAttackNotifier(init.Self, this); }
 	}
 
 	public class HarvesterAttackNotifier : INotifyDamage
@@ -45,14 +47,14 @@ namespace OpenRA.Mods.Common.Traits
 			lastAttackTime = -info.NotifyInterval * 25;
 		}
 
-		public void Damaged(Actor self, AttackInfo e)
+		void INotifyDamage.Damaged(Actor self, AttackInfo e)
 		{
-			// only track last hit against our harvesters
-			if (!self.Info.HasTraitInfo<HarvesterInfo>())
+			// Don't track self-damage
+			if (e.Attacker != null && e.Attacker.Owner == self.Owner)
 				return;
 
-			// don't track self-damage
-			if (e.Attacker != null && e.Attacker.Owner == self.Owner)
+			// Only track last hit against our harvesters
+			if (!self.Info.HasTraitInfo<HarvesterInfo>())
 				return;
 
 			if (self.World.WorldTick - lastAttackTime > info.NotifyInterval * 25)

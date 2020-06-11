@@ -1,27 +1,26 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
-using OpenTK.Graphics.OpenGL;
+using OpenRA.Primitives;
 
 namespace OpenRA.Platforms.Default
 {
-	sealed class Texture : ThreadAffine, ITexture
+	sealed class Texture : ThreadAffine, ITextureInternal
 	{
-		int texture;
+		uint texture;
 		TextureScaleFilter scaleFilter;
 
-		public int ID { get { return texture; } }
+		public uint ID { get { return texture; } }
 		public Size Size { get; private set; }
 
 		bool disposed;
@@ -46,38 +45,40 @@ namespace OpenRA.Platforms.Default
 
 		public Texture()
 		{
-			GL.GenTextures(1, out texture);
-			ErrorHandler.CheckGlError();
-		}
-
-		public Texture(Bitmap bitmap)
-		{
-			GL.GenTextures(1, out texture);
-			ErrorHandler.CheckGlError();
-			SetData(bitmap);
+			OpenGL.glGenTextures(1, out texture);
+			OpenGL.CheckGLError();
 		}
 
 		void PrepareTexture()
 		{
-			ErrorHandler.CheckGlError();
-			GL.BindTexture(TextureTarget.Texture2D, texture);
-			ErrorHandler.CheckGlError();
+			OpenGL.CheckGLError();
+			OpenGL.glBindTexture(OpenGL.GL_TEXTURE_2D, texture);
+			OpenGL.CheckGLError();
 
-			var filter = scaleFilter == TextureScaleFilter.Linear ? (int)TextureMinFilter.Linear : (int)TextureMinFilter.Nearest;
-			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, filter);
-			ErrorHandler.CheckGlError();
-			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, filter);
-			ErrorHandler.CheckGlError();
+			var filter = scaleFilter == TextureScaleFilter.Linear ? OpenGL.GL_LINEAR : OpenGL.GL_NEAREST;
+			OpenGL.glTexParameteri(OpenGL.GL_TEXTURE_2D, OpenGL.GL_TEXTURE_MAG_FILTER, filter);
+			OpenGL.CheckGLError();
+			OpenGL.glTexParameteri(OpenGL.GL_TEXTURE_2D, OpenGL.GL_TEXTURE_MIN_FILTER, filter);
+			OpenGL.CheckGLError();
 
-			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (float)TextureWrapMode.ClampToEdge);
-			ErrorHandler.CheckGlError();
-			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (float)TextureWrapMode.ClampToEdge);
-			ErrorHandler.CheckGlError();
+			OpenGL.glTexParameterf(OpenGL.GL_TEXTURE_2D, OpenGL.GL_TEXTURE_WRAP_S, OpenGL.GL_CLAMP_TO_EDGE);
+			OpenGL.CheckGLError();
+			OpenGL.glTexParameterf(OpenGL.GL_TEXTURE_2D, OpenGL.GL_TEXTURE_WRAP_T, OpenGL.GL_CLAMP_TO_EDGE);
+			OpenGL.CheckGLError();
 
-			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBaseLevel, 0);
-			ErrorHandler.CheckGlError();
-			GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 0);
-			ErrorHandler.CheckGlError();
+			OpenGL.glTexParameteri(OpenGL.GL_TEXTURE_2D, OpenGL.GL_TEXTURE_BASE_LEVEL, 0);
+			OpenGL.CheckGLError();
+			OpenGL.glTexParameteri(OpenGL.GL_TEXTURE_2D, OpenGL.GL_TEXTURE_MAX_LEVEL, 0);
+			OpenGL.CheckGLError();
+		}
+
+		void SetData(IntPtr data, int width, int height)
+		{
+			PrepareTexture();
+			var glInternalFormat = OpenGL.Profile == GLProfile.Embedded ? OpenGL.GL_BGRA : OpenGL.GL_RGBA8;
+			OpenGL.glTexImage2D(OpenGL.GL_TEXTURE_2D, 0, glInternalFormat, width, height,
+				0, OpenGL.GL_BGRA, OpenGL.GL_UNSIGNED_BYTE, data);
+			OpenGL.CheckGLError();
 		}
 
 		public void SetData(byte[] colors, int width, int height)
@@ -90,13 +91,7 @@ namespace OpenRA.Platforms.Default
 			unsafe
 			{
 				fixed (byte* ptr = &colors[0])
-				{
-					var intPtr = new IntPtr((void*)ptr);
-					PrepareTexture();
-					GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, width, height,
-						0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, intPtr);
-					ErrorHandler.CheckGlError();
-				}
+					SetData(new IntPtr(ptr), width, height);
 			}
 		}
 
@@ -114,42 +109,7 @@ namespace OpenRA.Platforms.Default
 			unsafe
 			{
 				fixed (uint* ptr = &colors[0, 0])
-				{
-					var intPtr = new IntPtr((void*)ptr);
-					PrepareTexture();
-					GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, width, height,
-						0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, intPtr);
-					ErrorHandler.CheckGlError();
-				}
-			}
-		}
-
-		public void SetData(Bitmap bitmap)
-		{
-			VerifyThreadAffinity();
-			var allocatedBitmap = false;
-			if (!Exts.IsPowerOf2(bitmap.Width) || !Exts.IsPowerOf2(bitmap.Height))
-			{
-				bitmap = new Bitmap(bitmap, bitmap.Size.NextPowerOf2());
-				allocatedBitmap = true;
-			}
-
-			try
-			{
-				Size = new Size(bitmap.Width, bitmap.Height);
-				var bits = bitmap.LockBits(bitmap.Bounds(),
-					ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-
-				PrepareTexture();
-				GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, bits.Width, bits.Height,
-					0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, bits.Scan0); // TODO: weird strides
-				ErrorHandler.CheckGlError();
-				bitmap.UnlockBits(bits);
-			}
-			finally
-			{
-				if (allocatedBitmap)
-					bitmap.Dispose();
+					SetData(new IntPtr(ptr), width, height);
 			}
 		}
 
@@ -158,18 +118,66 @@ namespace OpenRA.Platforms.Default
 			VerifyThreadAffinity();
 			var data = new byte[4 * Size.Width * Size.Height];
 
-			ErrorHandler.CheckGlError();
-			GL.BindTexture(TextureTarget.Texture2D, texture);
-			unsafe
+			// GLES doesn't support glGetTexImage so data must be read back via a frame buffer
+			if (OpenGL.Profile == GLProfile.Embedded)
 			{
-				fixed (byte* ptr = &data[0])
+				// Query the active framebuffer so we can restore it afterwards
+				int lastFramebuffer;
+				OpenGL.glGetIntegerv(OpenGL.GL_FRAMEBUFFER_BINDING, out lastFramebuffer);
+
+				uint framebuffer;
+				OpenGL.glGenFramebuffers(1, out framebuffer);
+				OpenGL.glBindFramebuffer(OpenGL.GL_FRAMEBUFFER, framebuffer);
+				OpenGL.CheckGLError();
+
+				OpenGL.glFramebufferTexture2D(OpenGL.GL_FRAMEBUFFER, OpenGL.GL_COLOR_ATTACHMENT0, OpenGL.GL_TEXTURE_2D, texture, 0);
+				OpenGL.CheckGLError();
+
+				var canReadBGRA = OpenGL.Features.HasFlag(OpenGL.GLFeatures.ESReadFormatBGRA);
+
+				unsafe
 				{
-					var intPtr = new IntPtr((void*)ptr);
-					GL.GetTexImage(TextureTarget.Texture2D, 0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, intPtr);
+					fixed (byte* ptr = &data[0])
+					{
+						var intPtr = new IntPtr(ptr);
+
+						var format = canReadBGRA ? OpenGL.GL_BGRA : OpenGL.GL_RGBA;
+						OpenGL.glReadPixels(0, 0, Size.Width, Size.Height, format, OpenGL.GL_UNSIGNED_BYTE, intPtr);
+						OpenGL.CheckGLError();
+					}
 				}
+
+				// Convert RGBA to BGRA
+				if (!canReadBGRA)
+				{
+					for (var i = 0; i < 4 * Size.Width * Size.Height; i += 4)
+					{
+						var temp = data[i];
+						data[i] = data[i + 2];
+						data[i + 2] = temp;
+					}
+				}
+
+				OpenGL.glBindFramebuffer(OpenGL.GL_FRAMEBUFFER, (uint)lastFramebuffer);
+				OpenGL.glDeleteFramebuffers(1, ref framebuffer);
+				OpenGL.CheckGLError();
+			}
+			else
+			{
+				OpenGL.glBindTexture(OpenGL.GL_TEXTURE_2D, texture);
+				unsafe
+				{
+					fixed (byte* ptr = &data[0])
+					{
+						var intPtr = new IntPtr((void*)ptr);
+						OpenGL.glGetTexImage(OpenGL.GL_TEXTURE_2D, 0, OpenGL.GL_BGRA,
+							OpenGL.GL_UNSIGNED_BYTE, intPtr);
+					}
+				}
+
+				OpenGL.CheckGLError();
 			}
 
-			ErrorHandler.CheckGlError();
 			return data;
 		}
 
@@ -180,20 +188,12 @@ namespace OpenRA.Platforms.Default
 				throw new InvalidDataException("Non-power-of-two array {0}x{1}".F(width, height));
 
 			Size = new Size(width, height);
-			PrepareTexture();
-			GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, width, height,
-				0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, IntPtr.Zero);
-			ErrorHandler.CheckGlError();
-		}
-
-		~Texture()
-		{
-			Game.RunAfterTick(() => Dispose(false));
+			SetData(IntPtr.Zero, width, height);
 		}
 
 		public void Dispose()
 		{
-			Game.RunAfterTick(() => Dispose(true));
+			Dispose(true);
 			GC.SuppressFinalize(this);
 		}
 
@@ -202,7 +202,7 @@ namespace OpenRA.Platforms.Default
 			if (disposed)
 				return;
 			disposed = true;
-			GL.DeleteTextures(1, ref texture);
+			OpenGL.glDeleteTextures(1, ref texture);
 		}
 	}
 }

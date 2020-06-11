@@ -1,28 +1,28 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
-using System;
-using System.Collections.Generic;
+using System.Linq;
 using OpenRA.GameRules;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Warheads
 {
+	public enum DamageCalculationType { HitShape, ClosestTargetablePosition, CenterPosition }
+
 	public class SpreadDamageWarhead : DamageWarhead, IRulesetLoaded<WeaponInfo>
 	{
 		[Desc("Range between falloff steps.")]
 		public readonly WDist Spread = new WDist(43);
-
-		[Desc("Extra search radius beyond maximum spread. Required to ensure damage to actors with large health radius.")]
-		public readonly WDist TargetExtraSearchRadius = new WDist(1536);
 
 		[Desc("Damage percentage at each range step")]
 		public readonly int[] Falloff = { 100, 37, 14, 5, 0 };
@@ -30,7 +30,10 @@ namespace OpenRA.Mods.Common.Warheads
 		[Desc("Ranges at which each Falloff step is defined. Overrides Spread.")]
 		public WDist[] Range = null;
 
-		public void RulesetLoaded(Ruleset rules, WeaponInfo info)
+		[Desc("Controls the way damage is calculated. Possible values are 'HitShape', 'ClosestTargetablePosition' and 'CenterPosition'.")]
+		public readonly DamageCalculationType DamageCalculationType = DamageCalculationType.HitShape;
+
+		void IRulesetLoaded<WeaponInfo>.RulesetLoaded(Ruleset rules, WeaponInfo info)
 		{
 			if (Range != null)
 			{
@@ -45,32 +48,51 @@ namespace OpenRA.Mods.Common.Warheads
 				Range = Exts.MakeArray(Falloff.Length, i => i * Spread);
 		}
 
-		public override void DoImpact(WPos pos, Actor firedBy, IEnumerable<int> damageModifiers)
+		protected override void DoImpact(WPos pos, Actor firedBy, WarheadArgs args)
 		{
-			var world = firedBy.World;
+			var debugVis = firedBy.World.WorldActor.TraitOrDefault<DebugVisualizations>();
+			if (debugVis != null && debugVis.CombatGeometry)
+				firedBy.World.WorldActor.Trait<WarheadDebugOverlay>().AddImpact(pos, Range, DebugOverlayColor);
 
-			if (world.LocalPlayer != null)
+			foreach (var victim in firedBy.World.FindActorsOnCircle(pos, Range[Range.Length - 1]))
 			{
-				var devMode = world.LocalPlayer.PlayerActor.TraitOrDefault<DeveloperMode>();
-				if (devMode != null && devMode.ShowCombatGeometry)
-					world.WorldActor.Trait<WarheadDebugOverlay>().AddImpact(pos, Range);
-			}
-
-			// This only finds actors where the center is within the search radius,
-			// so we need to search beyond the maximum spread to account for actors with large health radius
-			var hitActors = world.FindActorsInCircle(pos, Range[Range.Length - 1] + TargetExtraSearchRadius);
-
-			foreach (var victim in hitActors)
-			{
-				var healthInfo = victim.Info.TraitInfoOrDefault<HealthInfo>();
-				if (healthInfo == null)
+				if (!IsValidAgainst(victim, firedBy))
 					continue;
 
-				var localModifiers = damageModifiers;
-				var distance = Math.Max(0, (victim.CenterPosition - pos).Length - healthInfo.Radius.Length);
-				localModifiers = localModifiers.Append(GetDamageFalloff(distance));
+				var closestActiveShape = victim.TraitsImplementing<HitShape>()
+					.Where(Exts.IsTraitEnabled)
+					.Select(s => Pair.New(s, s.DistanceFromEdge(victim, pos)))
+					.MinByOrDefault(s => s.Second);
 
-				DoImpact(victim, firedBy, localModifiers);
+				// Cannot be damaged without an active HitShape.
+				if (closestActiveShape.First == null)
+					continue;
+
+				var falloffDistance = 0;
+				switch (DamageCalculationType)
+				{
+					case DamageCalculationType.HitShape:
+						falloffDistance = closestActiveShape.Second.Length;
+						break;
+					case DamageCalculationType.ClosestTargetablePosition:
+						falloffDistance = victim.GetTargetablePositions().Select(x => (x - pos).Length).Min();
+						break;
+					case DamageCalculationType.CenterPosition:
+						falloffDistance = (victim.CenterPosition - pos).Length;
+						break;
+				}
+
+				// The range to target is more than the range the warhead covers, so GetDamageFalloff() is going to give us 0 and we're going to do 0 damage anyway, so bail early.
+				if (falloffDistance > Range[Range.Length - 1].Length)
+					continue;
+
+				var localModifiers = args.DamageModifiers.Append(GetDamageFalloff(falloffDistance));
+				var updatedWarheadArgs = new WarheadArgs(args)
+				{
+					DamageModifiers = localModifiers.ToArray(),
+				};
+
+				InflictDamage(victim, firedBy, closestActiveShape.First, updatedWarheadArgs);
 			}
 		}
 

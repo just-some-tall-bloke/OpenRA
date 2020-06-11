@@ -1,16 +1,20 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Primitives;
+using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Pathfinder
 {
@@ -38,7 +42,7 @@ namespace OpenRA.Mods.Common.Pathfinder
 
 		bool InReverse { get; set; }
 
-		Actor IgnoredActor { get; set; }
+		Actor IgnoreActor { get; set; }
 
 		World World { get; }
 
@@ -71,30 +75,44 @@ namespace OpenRA.Mods.Common.Pathfinder
 
 	sealed class PathGraph : IGraph<CellInfo>
 	{
+		public const int CostForInvalidCell = int.MaxValue;
+
 		public Actor Actor { get; private set; }
 		public World World { get; private set; }
 		public Func<CPos, bool> CustomBlock { get; set; }
 		public Func<CPos, int> CustomCost { get; set; }
 		public int LaneBias { get; set; }
 		public bool InReverse { get; set; }
-		public Actor IgnoredActor { get; set; }
+		public Actor IgnoreActor { get; set; }
 
-		readonly CellConditions checkConditions;
-		readonly MobileInfo mobileInfo;
-		readonly MobileInfo.WorldMovementInfo worldMovementInfo;
+		readonly BlockedByActor checkConditions;
+		readonly Locomotor locomotor;
+		readonly LocomotorInfo.WorldMovementInfo worldMovementInfo;
 		readonly CellInfoLayerPool.PooledCellInfoLayer pooledLayer;
-		CellLayer<CellInfo> cellInfo;
+		readonly bool checkTerrainHeight;
+		CellLayer<CellInfo> groundInfo;
 
-		public PathGraph(CellInfoLayerPool layerPool, MobileInfo mobileInfo, Actor actor, World world, bool checkForBlocked)
+		readonly Dictionary<byte, Pair<ICustomMovementLayer, CellLayer<CellInfo>>> customLayerInfo =
+			new Dictionary<byte, Pair<ICustomMovementLayer, CellLayer<CellInfo>>>();
+
+		public PathGraph(CellInfoLayerPool layerPool, Locomotor locomotor, Actor actor, World world, BlockedByActor check)
 		{
 			pooledLayer = layerPool.Get();
-			cellInfo = pooledLayer.Layer;
+			groundInfo = pooledLayer.GetLayer();
+			var locomotorInfo = locomotor.Info;
+			this.locomotor = locomotor;
+			var layers = world.GetCustomMovementLayers().Values
+				.Where(cml => cml.EnabledForActor(actor.Info, locomotorInfo));
+
+			foreach (var cml in layers)
+				customLayerInfo[cml.Index] = Pair.New(cml, pooledLayer.GetLayer());
+
 			World = world;
-			this.mobileInfo = mobileInfo;
-			worldMovementInfo = mobileInfo.GetWorldMovementInfo(world);
+			worldMovementInfo = locomotorInfo.GetWorldMovementInfo(world);
 			Actor = actor;
 			LaneBias = 1;
-			checkConditions = checkForBlocked ? CellConditions.TransientActors : CellConditions.None;
+			checkConditions = check;
+			checkTerrainHeight = world.Map.Grid.MaximumTerrainHeight > 0;
 		}
 
 		// Sets of neighbors for each incoming direction. These exclude the neighbors which are guaranteed
@@ -102,7 +120,8 @@ namespace OpenRA.Mods.Common.Pathfinder
 		// For horizontal/vertical directions, the set is the three cells 'ahead'. For diagonal directions, the set
 		// is the three cells ahead, plus the two cells to the side, which we cannot exclude without knowing if
 		// the cell directly between them and our parent is passable.
-		static readonly CVec[][] DirectedNeighbors = {
+		static readonly CVec[][] DirectedNeighbors =
+		{
 			new[] { new CVec(-1, -1), new CVec(0, -1), new CVec(1, -1), new CVec(-1, 0), new CVec(-1, 1) },
 			new[] { new CVec(-1, -1), new CVec(0, -1), new CVec(1, -1) },
 			new[] { new CVec(-1, -1), new CVec(0, -1), new CVec(1, -1), new CVec(1, 0), new CVec(1, 1) },
@@ -116,7 +135,8 @@ namespace OpenRA.Mods.Common.Pathfinder
 
 		public List<GraphConnection> GetConnections(CPos position)
 		{
-			var previousPos = cellInfo[position].PreviousPos;
+			var info = position.Layer == 0 ? groundInfo : customLayerInfo[position.Layer].Second;
+			var previousPos = info[position].PreviousPos;
 
 			var dx = position.X - previousPos.X;
 			var dy = position.Y - previousPos.Y;
@@ -128,8 +148,26 @@ namespace OpenRA.Mods.Common.Pathfinder
 			{
 				var neighbor = position + directions[i];
 				var movementCost = GetCostToNode(neighbor, directions[i]);
-				if (movementCost != Constants.InvalidNode)
+				if (movementCost != CostForInvalidCell)
 					validNeighbors.Add(new GraphConnection(neighbor, movementCost));
+			}
+
+			if (position.Layer == 0)
+			{
+				foreach (var cli in customLayerInfo.Values)
+				{
+					var layerPosition = new CPos(position.X, position.Y, cli.First.Index);
+					var entryCost = cli.First.EntryMovementCost(Actor.Info, locomotor.Info, layerPosition);
+					if (entryCost != CostForInvalidCell)
+						validNeighbors.Add(new GraphConnection(layerPosition, entryCost));
+				}
+			}
+			else
+			{
+				var layerPosition = new CPos(position.X, position.Y, 0);
+				var exitCost = customLayerInfo[position.Layer].First.ExitMovementCost(Actor.Info, locomotor.Info, layerPosition);
+				if (exitCost != CostForInvalidCell)
+					validNeighbors.Add(new GraphConnection(layerPosition, exitCost));
 			}
 
 			return validNeighbors;
@@ -137,11 +175,11 @@ namespace OpenRA.Mods.Common.Pathfinder
 
 		int GetCostToNode(CPos destNode, CVec direction)
 		{
-			var movementCost = mobileInfo.MovementCostToEnterCell(worldMovementInfo, Actor, destNode, IgnoredActor, checkConditions);
-			if (movementCost != int.MaxValue && !(CustomBlock != null && CustomBlock(destNode)))
+			var movementCost = locomotor.MovementCostToEnterCell(Actor, destNode, checkConditions, IgnoreActor);
+			if (movementCost != short.MaxValue && !(CustomBlock != null && CustomBlock(destNode)))
 				return CalculateCellCost(destNode, direction, movementCost);
 
-			return Constants.InvalidNode;
+			return CostForInvalidCell;
 		}
 
 		int CalculateCellCost(CPos neighborCPos, CVec direction, int movementCost)
@@ -154,13 +192,21 @@ namespace OpenRA.Mods.Common.Pathfinder
 			if (CustomCost != null)
 			{
 				var customCost = CustomCost(neighborCPos);
-				if (customCost == Constants.InvalidNode)
-					return Constants.InvalidNode;
+				if (customCost == CostForInvalidCell)
+					return CostForInvalidCell;
 
 				cellCost += customCost;
 			}
 
-			// directional bonuses for smoother flow!
+			// Prevent units from jumping over height discontinuities
+			if (checkTerrainHeight && neighborCPos.Layer == 0)
+			{
+				var from = neighborCPos - direction;
+				if (Math.Abs(World.Map.Height[neighborCPos] - World.Map.Height[from]) > 1)
+					return CostForInvalidCell;
+			}
+
+			// Directional bonuses for smoother flow!
 			if (LaneBias != 0)
 			{
 				var ux = neighborCPos.X + (InReverse ? 1 : 0) & 1;
@@ -178,14 +224,15 @@ namespace OpenRA.Mods.Common.Pathfinder
 
 		public CellInfo this[CPos pos]
 		{
-			get { return cellInfo[pos]; }
-			set { cellInfo[pos] = value; }
+			get { return (pos.Layer == 0 ? groundInfo : customLayerInfo[pos.Layer].Second)[pos]; }
+			set { (pos.Layer == 0 ? groundInfo : customLayerInfo[pos.Layer].Second)[pos] = value; }
 		}
 
 		public void Dispose()
 		{
+			groundInfo = null;
+			customLayerInfo.Clear();
 			pooledLayer.Dispose();
-			cellInfo = null;
 		}
 	}
 }

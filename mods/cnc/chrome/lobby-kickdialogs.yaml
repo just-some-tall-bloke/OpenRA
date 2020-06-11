@@ -5,46 +5,47 @@ Background@KICK_CLIENT_DIALOG:
 	Background: scrollpanel-bg
 	Children:
 		Label@TITLE:
-			Y: 40
+			Y: 41
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Bold
 			Align: Center
 		Label@TEXTA:
-			Y: 67
+			Y: 68
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Regular
 			Align: Center
 			Text: You may also apply a temporary ban, preventing
 		Label@TEXTB:
-			Y: 85
+			Y: 86
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Regular
 			Align: Center
 			Text: them from joining for the remainder of this game.
 		Checkbox@PREVENT_REJOINING_CHECKBOX:
-			X: (PARENT_RIGHT - WIDTH)/2
+			X: (PARENT_RIGHT - WIDTH) / 2
 			Y: 120
 			Width: 150
 			Height: 20
 			Font: Regular
 			Text: Temporarily Ban
 		Button@OK_BUTTON:
-			X: (PARENT_RIGHT - WIDTH)/2 + 75
+			X: (PARENT_RIGHT - WIDTH) / 2 + 75
 			Y: 155
 			Width: 120
 			Height: 25
 			Text: Kick
 			Font: Bold
 		Button@CANCEL_BUTTON:
-			X: (PARENT_RIGHT - WIDTH)/2 - 75
+			X: (PARENT_RIGHT - WIDTH) / 2 - 75
 			Y: 155
 			Width: 120
 			Height: 25
 			Text: Cancel
 			Font: Bold
+
 Background@KICK_SPECTATORS_DIALOG:
 	Width: PARENT_RIGHT
 	Height: PARENT_BOTTOM
@@ -52,53 +53,54 @@ Background@KICK_SPECTATORS_DIALOG:
 	Background: scrollpanel-bg
 	Children:
 		Label@TITLE:
-			Y: 40
+			Y: 41
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Bold
 			Align: Center
 			Text: Kick Spectators
 		Label@TEXT:
-			Y: 85
+			Y: 86
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Regular
 			Align: Center
 		Button@OK_BUTTON:
-			X: (PARENT_RIGHT - WIDTH)/2 + 75
+			X: (PARENT_RIGHT - WIDTH) / 2 + 75
 			Y: 155
 			Width: 120
 			Height: 25
 			Text: Ok
 			Font: Bold
 		Button@CANCEL_BUTTON:
-			X: (PARENT_RIGHT - WIDTH)/2 - 75
+			X: (PARENT_RIGHT - WIDTH) / 2 - 75
 			Y: 155
 			Width: 120
 			Height: 25
 			Text: Cancel
 			Font: Bold
+
 Background@FORCE_START_DIALOG:
 	Width: PARENT_RIGHT
 	Height: PARENT_BOTTOM
 	Background: scrollpanel-bg
 	Children:
 		Label@TITLE:
-			Y: 40
+			Y: 41
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Bold
 			Align: Center
 			Text: Start Game?
 		Label@TEXTA:
-			Y: 67
+			Y: 68
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Regular
 			Align: Center
 			Text: One or more players are not yet ready.
 		Label@TEXTB:
-			Y: 85
+			Y: 86
 			Width: PARENT_RIGHT
 			Height: 25
 			Font: Regular
@@ -109,7 +111,7 @@ Background@FORCE_START_DIALOG:
 			Children:
 				Label@KICK_WARNING_A:
 					X: 0
-					Y: 106
+					Y: 107
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Bold
@@ -117,21 +119,21 @@ Background@FORCE_START_DIALOG:
 					Text: One or more clients are missing the selected
 				Label@KICK_WARNING_B:
 					X: 0
-					Y: 123
+					Y: 124
 					Width: PARENT_RIGHT
 					Height: 25
 					Font: Bold
 					Align: Center
 					Text: map, and will be kicked from the server.
 		Button@OK_BUTTON:
-			X: (PARENT_RIGHT - WIDTH)/2 + 75
+			X: (PARENT_RIGHT - WIDTH) / 2 + 75
 			Y: 155
 			Width: 120
 			Height: 25
 			Text: Start
 			Font: Bold
 		Button@CANCEL_BUTTON:
-			X: (PARENT_RIGHT - WIDTH)/2 - 75
+			X: (PARENT_RIGHT - WIDTH) / 2 - 75
 			Y: 155
 			Width: 120
 			Height: 25

@@ -1,70 +1,105 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
 using OpenRA.Activities;
 using OpenRA.Mods.Common.Activities;
 using OpenRA.Mods.Common.Orders;
+using OpenRA.Primitives;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("This actor can be sent to a structure for repairs.")]
-	class RepairableInfo : ITraitInfo, Requires<HealthInfo>
+	public class RepairableInfo : TraitInfo, Requires<IHealthInfo>, Requires<IMoveInfo>, IObservesVariablesInfo
 	{
-		public readonly HashSet<string> RepairBuildings = new HashSet<string> { "fix" };
+		[ActorReference]
+		[FieldLoader.Require]
+		public readonly HashSet<string> RepairActors = new HashSet<string> { };
 
-		[VoiceReference] public readonly string Voice = "Action";
+		[VoiceReference]
+		public readonly string Voice = "Action";
 
-		public virtual object Create(ActorInitializer init) { return new Repairable(init.Self, this); }
+		[Desc("The amount the unit will be repaired at each step. Use -1 for fallback behavior where HpPerStep from RepairsUnits trait will be used.")]
+		public readonly int HpPerStep = -1;
+
+		[ConsumedConditionReference]
+		[Desc("Boolean expression defining the condition under which the regular (non-force) enter cursor is disabled.")]
+		public readonly BooleanExpression RequireForceMoveCondition = null;
+
+		[Desc("Cursor to display when able to be repaired at target actor.")]
+		public readonly string EnterCursor = "enter";
+
+		[Desc("Cursor to display when unable to be repaired at target actor.")]
+		public readonly string EnterBlockedCursor = "enter-blocked";
+
+		public override object Create(ActorInitializer init) { return new Repairable(init.Self, this); }
 	}
 
-	class Repairable : IIssueOrder, IResolveOrder, IOrderVoice
+	public class Repairable : IIssueOrder, IResolveOrder, IOrderVoice, INotifyCreated, IObservesVariables
 	{
-		readonly RepairableInfo info;
-		readonly Health health;
-		readonly AmmoPool[] ammoPools;
+		public readonly RepairableInfo Info;
+		readonly IHealth health;
+		Rearmable rearmable;
+		bool requireForceMove;
+		bool isAircraft;
 
 		public Repairable(Actor self, RepairableInfo info)
 		{
-			this.info = info;
-			health = self.Trait<Health>();
-			ammoPools = self.TraitsImplementing<AmmoPool>().ToArray();
+			Info = info;
+			health = self.Trait<IHealth>();
 		}
 
-		public IEnumerable<IOrderTargeter> Orders
+		void INotifyCreated.Created(Actor self)
+		{
+			rearmable = self.TraitOrDefault<Rearmable>();
+			isAircraft = self.Info.HasTraitInfo<AircraftInfo>();
+		}
+
+		IEnumerable<IOrderTargeter> IIssueOrder.Orders
 		{
 			get
 			{
-				yield return new EnterAlliedActorTargeter<BuildingInfo>("Repair", 5, CanRepairAt, _ => CanRepair() || CanRearm());
+				if (!isAircraft)
+					yield return new EnterAlliedActorTargeter<BuildingInfo>(
+						"Repair",
+						5,
+						Info.EnterCursor,
+						Info.EnterBlockedCursor,
+						CanRepairAt,
+						_ => CanRepair() || CanRearm());
 			}
 		}
 
-		public Order IssueOrder(Actor self, IOrderTargeter order, Target target, bool queued)
+		Order IIssueOrder.IssueOrder(Actor self, IOrderTargeter order, Target target, bool queued)
 		{
 			if (order.OrderID == "Repair")
-				return new Order(order.OrderID, self, queued) { TargetActor = target.Actor };
+				return new Order(order.OrderID, self, target, queued);
 
 			return null;
 		}
 
 		bool CanRepairAt(Actor target)
 		{
-			return info.RepairBuildings.Contains(target.Info.Name);
+			return Info.RepairActors.Contains(target.Info.Name);
 		}
 
-		bool CanRearmAt(Actor target)
+		bool CanRepairAt(Actor target, TargetModifiers modifiers)
 		{
-			return info.RepairBuildings.Contains(target.Info.Name);
+			if (requireForceMove && !modifiers.HasModifier(TargetModifiers.ForceMove))
+				return false;
+
+			return Info.RepairActors.Contains(target.Info.Name);
 		}
 
 		bool CanRepair()
@@ -74,80 +109,58 @@ namespace OpenRA.Mods.Common.Traits
 
 		bool CanRearm()
 		{
-			return ammoPools.Any(x => !x.Info.SelfReloads && !x.FullAmmo());
+			return rearmable != null && rearmable.RearmableAmmoPools.Any(p => !p.HasFullAmmo);
 		}
 
-		public string VoicePhraseForOrder(Actor self, Order order)
+		string IOrderVoice.VoicePhraseForOrder(Actor self, Order order)
 		{
-			return (order.OrderString == "Repair" && CanRepair()) ? info.Voice : null;
+			return order.OrderString == "Repair" && (CanRepair() || CanRearm()) ? Info.Voice : null;
 		}
 
-		public void ResolveOrder(Actor self, Order order)
+		void IResolveOrder.ResolveOrder(Actor self, Order order)
 		{
-			if (order.OrderString == "Repair")
-			{
-				if (!CanRepairAt(order.TargetActor) || (!CanRepair() && !CanRearm()))
-					return;
-
-				var movement = self.Trait<IMove>();
-				var target = Target.FromOrder(self.World, order);
-				self.SetTargetLine(target, Color.Green);
-
-				self.CancelActivity();
-				self.QueueActivity(new WaitForTransport(self, Util.SequenceActivities(new MoveAdjacentTo(self, target),
-					new CallFunc(() => AfterReachActivities(self, order, movement)))));
-
-				TryCallTransport(self, target, new CallFunc(() => AfterReachActivities(self, order, movement)));
-			}
-		}
-
-		void AfterReachActivities(Actor self, Order order, IMove movement)
-		{
-			if (!order.TargetActor.IsInWorld || order.TargetActor.IsDead || order.TargetActor.IsDisabled())
+			if (order.OrderString != "Repair")
 				return;
 
-			// TODO: This is hacky, but almost every single component affected
-			// will need to be rewritten anyway, so this is OK for now.
-			self.QueueActivity(movement.MoveTo(self.World.Map.CellContaining(order.TargetActor.CenterPosition), order.TargetActor));
-			if (CanRearmAt(order.TargetActor) && CanRearm())
-				self.QueueActivity(new Rearm(self));
+			// Repair orders are only valid for own/allied actors,
+			// which are guaranteed to never be frozen.
+			if (order.Target.Type != TargetType.Actor)
+				return;
 
-			self.QueueActivity(new Repair(order.TargetActor));
+			// Aircraft handle Repair orders directly in the Aircraft trait
+			// TODO: Move the order handling of both this trait and Aircraft to a generalistic DockManager
+			if (isAircraft)
+				return;
 
-			var rp = order.TargetActor.TraitOrDefault<RallyPoint>();
-			if (rp != null)
-			{
-				self.QueueActivity(new CallFunc(() =>
-				{
-					self.SetTargetLine(Target.FromCell(self.World, rp.Location), Color.Green);
-					self.QueueActivity(movement.MoveTo(rp.Location, order.TargetActor));
-				}));
-			}
+			if (!CanRepairAt(order.Target.Actor) || (!CanRepair() && !CanRearm()))
+				return;
+
+			self.QueueActivity(order.Queued, new Resupply(self, order.Target.Actor, new WDist(512)));
+			self.ShowTargetLines();
+		}
+
+		IEnumerable<VariableObserver> IObservesVariables.GetVariableObservers()
+		{
+			if (Info.RequireForceMoveCondition != null)
+				yield return new VariableObserver(RequireForceMoveConditionChanged, Info.RequireForceMoveCondition.Variables);
+		}
+
+		void RequireForceMoveConditionChanged(Actor self, IReadOnlyDictionary<string, int> conditions)
+		{
+			requireForceMove = Info.RequireForceMoveCondition.Evaluate(conditions);
 		}
 
 		public Actor FindRepairBuilding(Actor self)
 		{
 			var repairBuilding = self.World.ActorsWithTrait<RepairsUnits>()
 				.Where(a => !a.Actor.IsDead && a.Actor.IsInWorld
-					&& a.Actor.Owner == self.Owner &&
-					info.RepairBuildings.Contains(a.Actor.Info.Name))
-				.OrderBy(p => (self.Location - p.Actor.Location).LengthSquared);
+					&& a.Actor.Owner.IsAlliedWith(self.Owner) &&
+					Info.RepairActors.Contains(a.Actor.Info.Name))
+				.OrderBy(a => a.Actor.Owner == self.Owner ? 0 : 1)
+				.ThenBy(p => (self.Location - p.Actor.Location).LengthSquared);
 
 			// Worst case FirstOrDefault() will return a TraitPair<null, null>, which is OK.
 			return repairBuilding.FirstOrDefault().Actor;
-		}
-
-		static void TryCallTransport(Actor self, Target target, Activity nextActivity)
-		{
-			var transport = self.TraitOrDefault<ICallForTransport>();
-			if (transport == null)
-				return;
-
-			var targetCell = self.World.Map.CellContaining(target.CenterPosition);
-			if ((self.CenterPosition - target.CenterPosition).LengthSquared < transport.MinimumDistance.LengthSquared)
-				return;
-
-			transport.RequestTransport(targetCell, nextActivity);
 		}
 	}
 }

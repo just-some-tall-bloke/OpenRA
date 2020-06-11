@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -39,6 +40,16 @@ namespace OpenRA
 			mapBottomRight = BottomRight.ToMPos(gridType);
 		}
 
+		public CellRegion(MapGridType gridType, MPos topLeft, MPos bottomRight)
+		{
+			this.gridType = gridType;
+			mapTopLeft = topLeft;
+			mapBottomRight = bottomRight;
+
+			TopLeft = topLeft.ToCPos(gridType);
+			BottomRight = bottomRight.ToCPos(gridType);
+		}
+
 		/// <summary>Expand the specified region with an additional cordon. This may expand the region outside the map borders.</summary>
 		public static CellRegion Expand(CellRegion region, int cordon)
 		{
@@ -53,23 +64,24 @@ namespace OpenRA
 			if (cells == null || !cells.Any())
 				throw new ArgumentException("cells must not be null or empty.", "cells");
 
-			var minX = int.MaxValue;
-			var minY = int.MaxValue;
-			var maxX = int.MinValue;
-			var maxY = int.MinValue;
+			var minU = int.MaxValue;
+			var minV = int.MaxValue;
+			var maxU = int.MinValue;
+			var maxV = int.MinValue;
 			foreach (var cell in cells)
 			{
-				if (minX > cell.X)
-					minX = cell.X;
-				if (maxX < cell.X)
-					maxX = cell.X;
-				if (minY > cell.Y)
-					minY = cell.Y;
-				if (maxY < cell.Y)
-					maxY = cell.Y;
+				var uv = cell.ToMPos(shape);
+				if (minU > uv.U)
+					minU = uv.U;
+				if (maxU < uv.U)
+					maxU = uv.U;
+				if (minV > uv.V)
+					minV = uv.V;
+				if (maxV < uv.V)
+					maxV = uv.V;
 			}
 
-			return new CellRegion(shape, new CPos(minX, minY), new CPos(maxX, maxY));
+			return new CellRegion(shape, new MPos(minU, minV).ToCPos(shape), new MPos(maxU, maxV).ToCPos(shape));
 		}
 
 		public bool Contains(CellRegion region)

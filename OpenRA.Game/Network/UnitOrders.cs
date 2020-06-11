@@ -1,31 +1,33 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
+using OpenRA.Primitives;
+using OpenRA.Server;
 using OpenRA.Traits;
 
 namespace OpenRA.Network
 {
-	static class UnitOrders
+	public static class UnitOrders
 	{
+		public const int ChatMessageMaxLength = 2500;
+
 		static Player FindPlayerByClient(this World world, Session.Client c)
 		{
-			/* TODO: this is still a hack.
-			 * the cases we're trying to avoid are the extra players on the host's client -- Neutral, other MapPlayers,..*/
-			return world.Players.FirstOrDefault(
-				p => (p.ClientIndex == c.Index && p.PlayerReference.Playable));
+			return world.Players.FirstOrDefault(p => (p.ClientIndex == c.Index && p.PlayerReference.Playable));
 		}
 
-		public static void ProcessOrder(OrderManager orderManager, World world, int clientId, Order order)
+		internal static void ProcessOrder(OrderManager orderManager, World world, int clientId, Order order)
 		{
 			if (world != null)
 			{
@@ -36,30 +38,13 @@ namespace OpenRA.Network
 
 			switch (order.OrderString)
 			{
-				case "Chat":
-					{
-						var client = orderManager.LobbyInfo.ClientWithIndex(clientId);
-						if (client != null)
-						{
-							var player = world != null ? world.FindPlayerByClient(client) : null;
-							var suffix = (player != null && player.WinState == WinState.Lost) ? " (Dead)" : "";
-							suffix = client.IsObserver ? " (Spectator)" : suffix;
-
-							if (orderManager.LocalClient != null && client != orderManager.LocalClient && client.Team > 0 && client.Team == orderManager.LocalClient.Team)
-								suffix += " (Ally)";
-
-							Game.AddChatLine(client.Color.RGB, client.Name + suffix, order.TargetString);
-						}
-						else
-							Game.AddChatLine(Color.White, "(player {0})".F(clientId), order.TargetString);
-						break;
-					}
-
-				case "Message": // Server message
-					Game.AddChatLine(Color.White, "Server", order.TargetString);
+				// Server message
+				case "Message":
+					Game.AddSystemLine(order.TargetString);
 					break;
 
-				case "Disconnected": /* reports that the target player disconnected */
+				// Reports that the target player disconnected
+				case "Disconnected":
 					{
 						var client = orderManager.LobbyInfo.ClientWithIndex(clientId);
 						if (client != null)
@@ -67,30 +52,61 @@ namespace OpenRA.Network
 						break;
 					}
 
-				case "TeamChat":
+				case "Chat":
 					{
 						var client = orderManager.LobbyInfo.ClientWithIndex(clientId);
+						if (client == null)
+							break;
 
-						if (client != null)
+						// Cut chat messages to the hard limit to avoid exploits
+						var message = order.TargetString;
+						if (message.Length > ChatMessageMaxLength)
+							message = order.TargetString.Substring(0, ChatMessageMaxLength);
+
+						// ExtraData 0 means this is a normal chat order, everything else is team chat
+						if (order.ExtraData == 0)
 						{
-							if (world == null)
-							{
-								if (orderManager.LocalClient != null && client.Team == orderManager.LocalClient.Team)
-									Game.AddChatLine(client.Color.RGB, client.Name + " (Team)",
-										order.TargetString);
-							}
-							else
-							{
-								var player = world.FindPlayerByClient(client);
-								if (player == null) return;
+							var p = world != null ? world.FindPlayerByClient(client) : null;
+							var suffix = (p != null && p.WinState == WinState.Lost) ? " (Dead)" : "";
+							suffix = client.IsObserver ? " (Spectator)" : suffix;
 
-								if ((world.LocalPlayer != null && player.Stances[world.LocalPlayer] == Stance.Ally) || player.WinState == WinState.Lost)
-								{
-									var suffix = player.WinState == WinState.Lost ? " (Dead)" : " (Team)";
-									Game.AddChatLine(client.Color.RGB, client.Name + suffix, order.TargetString);
-								}
-							}
+							if (orderManager.LocalClient != null && client != orderManager.LocalClient && client.Team > 0 && client.Team == orderManager.LocalClient.Team)
+								suffix += " (Ally)";
+
+							Game.AddChatLine(client.Name + suffix, client.Color, message);
+							break;
 						}
+
+						// We are still in the lobby
+						if (world == null)
+						{
+							var prefix = order.ExtraData == uint.MaxValue ? "[Spectators] " : "[Team] ";
+							if (orderManager.LocalClient != null && client.Team == orderManager.LocalClient.Team)
+								Game.AddChatLine(prefix + client.Name, client.Color, message);
+
+							break;
+						}
+
+						var player = world.FindPlayerByClient(client);
+						var localClientIsObserver = world.IsReplay || (orderManager.LocalClient != null && orderManager.LocalClient.IsObserver)
+							|| (world.LocalPlayer != null && world.LocalPlayer.WinState != WinState.Undefined);
+
+						// ExtraData gives us the team number, uint.MaxValue means Spectators
+						if (order.ExtraData == uint.MaxValue && localClientIsObserver)
+						{
+							// Validate before adding the line
+							if (client.IsObserver || (player != null && player.WinState != WinState.Undefined))
+								Game.AddChatLine("[Spectators] " + client.Name, client.Color, message);
+
+							break;
+						}
+
+						var valid = client.Team == order.ExtraData && player != null && player.WinState == WinState.Undefined;
+						var isSameTeam = orderManager.LocalClient != null && order.ExtraData == orderManager.LocalClient.Team
+							&& world.LocalPlayer != null && world.LocalPlayer.WinState == WinState.Undefined;
+
+						if (valid && (isSameTeam || world.IsReplay))
+							Game.AddChatLine("[Team" + (world.IsReplay ? " " + order.ExtraData : "") + "] " + client.Name, client.Color, message);
 
 						break;
 					}
@@ -106,10 +122,44 @@ namespace OpenRA.Network
 							break;
 						}
 
-						Game.AddChatLine(Color.White, "Server", "The game has started.");
+						if (!string.IsNullOrEmpty(order.TargetString))
+						{
+							var data = MiniYaml.FromString(order.TargetString);
+							var saveLastOrdersFrame = data.FirstOrDefault(n => n.Key == "SaveLastOrdersFrame");
+							if (saveLastOrdersFrame != null)
+								orderManager.GameSaveLastFrame =
+									FieldLoader.GetValue<int>("saveLastOrdersFrame", saveLastOrdersFrame.Value.Value);
+
+							var saveSyncFrame = data.FirstOrDefault(n => n.Key == "SaveSyncFrame");
+							if (saveSyncFrame != null)
+								orderManager.GameSaveLastSyncFrame =
+									FieldLoader.GetValue<int>("SaveSyncFrame", saveSyncFrame.Value.Value);
+						}
+						else
+							Game.AddSystemLine("The game has started.");
+
 						Game.StartGame(orderManager.LobbyInfo.GlobalSettings.Map, WorldType.Regular);
 						break;
 					}
+
+				case "SaveTraitData":
+					{
+						var data = MiniYaml.FromString(order.TargetString)[0];
+						var traitIndex = int.Parse(data.Key);
+
+						if (world != null)
+							world.AddGameSaveTraitData(traitIndex, data.Value);
+
+						break;
+					}
+
+				case "GameSaved":
+					if (!orderManager.World.IsReplay)
+						Game.AddSystemLine("Game saved");
+
+					foreach (var nsr in orderManager.World.WorldActor.TraitsImplementing<INotifyGameSaved>())
+						nsr.GameSaved(orderManager.World);
+					break;
 
 				case "PauseGame":
 					{
@@ -117,10 +167,15 @@ namespace OpenRA.Network
 						if (client != null)
 						{
 							var pause = order.TargetString == "Pause";
-							if (orderManager.World.Paused != pause && world != null && !world.LobbyInfo.IsSinglePlayer)
+
+							// Prevent injected unpause orders from restarting a finished game
+							if (orderManager.World.PauseStateLocked && !pause)
+								break;
+
+							if (orderManager.World.Paused != pause && world != null && world.LobbyInfo.NonBotClients.Count() > 1)
 							{
 								var pausetext = "The game is {0} by {1}".F(pause ? "paused" : "un-paused", client.Name);
-								Game.AddChatLine(Color.White, "", pausetext);
+								Game.AddSystemLine(pausetext);
 							}
 
 							orderManager.World.Paused = pause;
@@ -133,22 +188,17 @@ namespace OpenRA.Network
 				case "HandshakeRequest":
 					{
 						// Switch to the server's mod if we need and are able to
-						var mod = Game.ModData.Manifest.Mod;
+						var mod = Game.ModData.Manifest;
 						var request = HandshakeRequest.Deserialize(order.TargetString);
 
-						ModMetadata serverMod;
-						if (request.Mod != mod.Id &&
-							ModMetadata.AllMods.TryGetValue(request.Mod, out serverMod) &&
-							serverMod.Version == request.Version)
+						var externalKey = ExternalMod.MakeKey(request.Mod, request.Version);
+						ExternalMod external;
+						if ((request.Mod != mod.Id || request.Version != mod.Metadata.Version)
+							&& Game.ExternalMods.TryGetValue(externalKey, out external))
 						{
-							var replay = orderManager.Connection as ReplayConnection;
-							var launchCommand = replay != null ?
-								"Launch.Replay=" + replay.Filename :
-								"Launch.Connect=" + orderManager.Host + ":" + orderManager.Port;
-
-							Game.ModData.LoadScreen.Display();
-							Game.InitializeMod(request.Mod, new Arguments(launchCommand));
-
+							// The ConnectionFailedLogic will prompt the user to switch mods
+							orderManager.ServerExternalMod = external;
+							orderManager.Connection.Dispose();
 							break;
 						}
 
@@ -167,15 +217,27 @@ namespace OpenRA.Network
 							State = Session.ClientState.Invalid
 						};
 
+						var localProfile = Game.LocalPlayerProfile;
 						var response = new HandshakeResponse()
 						{
 							Client = info,
 							Mod = mod.Id,
-							Version = mod.Version,
-							Password = orderManager.Password
+							Version = mod.Metadata.Version,
+							Password = orderManager.Password,
+							Fingerprint = localProfile.Fingerprint,
+							OrdersProtocol = ProtocolVersion.Orders
 						};
 
-						orderManager.IssueOrder(Order.HandshakeResponse(response.Serialize()));
+						if (request.AuthToken != null && response.Fingerprint != null)
+							response.AuthSignature = localProfile.Sign(request.AuthToken);
+
+						orderManager.IssueOrder(new Order("HandshakeResponse", null, false)
+						{
+							Type = OrderType.Handshake,
+							IsImmediate = true,
+							TargetString = response.Serialize()
+						});
+
 						break;
 					}
 
@@ -188,6 +250,7 @@ namespace OpenRA.Network
 
 				case "AuthenticationError":
 					{
+						// The ConnectionFailedLogic will prompt the user for the password
 						orderManager.ServerError = order.TargetString;
 						orderManager.AuthenticationFailed = true;
 						break;
@@ -266,48 +329,30 @@ namespace OpenRA.Network
 						break;
 					}
 
-				case "SetStance":
-					{
-						if (!Game.OrderManager.LobbyInfo.GlobalSettings.FragileAlliances)
-							return;
-
-						var targetPlayer = order.Player.World.Players.FirstOrDefault(p => p.InternalName == order.TargetString);
-						var newStance = (Stance)order.ExtraData;
-
-						order.Player.SetStance(targetPlayer, newStance);
-
-						Game.Debug("{0} has set diplomatic stance vs {1} to {2}",
-							order.Player.PlayerName, targetPlayer.PlayerName, newStance);
-
-						// automatically declare war reciprocally
-						if (newStance == Stance.Enemy && targetPlayer.Stances[order.Player] == Stance.Ally)
-						{
-							targetPlayer.SetStance(order.Player, newStance);
-							Game.Debug("{0} has reciprocated", targetPlayer.PlayerName);
-						}
-
-						break;
-					}
-
 				case "Ping":
 					{
-						orderManager.IssueOrder(Order.Pong(order.TargetString));
+						orderManager.IssueOrder(Order.FromTargetString("Pong", order.TargetString, true));
 						break;
 					}
 
 				default:
 					{
-						if (!order.IsImmediate)
-						{
-							var self = order.Subject;
-							if (!self.IsDead)
-								foreach (var t in self.TraitsImplementing<IResolveOrder>())
-									t.ResolveOrder(self, order);
-						}
+						if (order.GroupedActors == null)
+							ResolveOrder(order);
+						else
+							foreach (var subject in order.GroupedActors)
+								ResolveOrder(Order.FromGroupedOrder(order, subject));
 
 						break;
 					}
 			}
+		}
+
+		static void ResolveOrder(Order order)
+		{
+			if (order.Subject != null && !order.Subject.IsDead)
+				foreach (var t in order.Subject.TraitsImplementing<IResolveOrder>())
+					t.ResolveOrder(order.Subject, order);
 		}
 
 		static void SetOrderLag(OrderManager o)

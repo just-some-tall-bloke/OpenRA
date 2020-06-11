@@ -1,9 +1,9 @@
 lst:
 	idle: lstnew
-		Facings: 32
-	unload: lstnew
+		UseClassicFacings: True
 		Facings: 32
 	roof: lstnew2
+		UseClassicFacings: True
 		Facings: 32
 	icon: lsticnh.tem
 		AddExtension: False

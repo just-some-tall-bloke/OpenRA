@@ -1,14 +1,17 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
@@ -20,6 +23,8 @@ namespace OpenRA.Mods.Common.Graphics
 	{
 		void Tick();
 		IEnumerable<IRenderable> Render(WorldRenderer wr, WPos pos);
+		IEnumerable<IRenderable> RenderUI(WorldRenderer wr, int2 pos, float scale);
+		IEnumerable<Rectangle> ScreenBounds(WorldRenderer wr, WPos pos);
 	}
 
 	public class ActorPreviewInitializer : IActorInitializer
@@ -37,9 +42,84 @@ namespace OpenRA.Mods.Common.Graphics
 			this.dict = dict;
 		}
 
-		public T Get<T>() where T : IActorInit { return dict.Get<T>(); }
-		public U Get<T, U>() where T : IActorInit<U> { return dict.Get<T>().Value(World); }
-		public bool Contains<T>() where T : IActorInit { return dict.Contains<T>(); }
+		public T GetOrDefault<T>(TraitInfo info) where T : ActorInit
+		{
+			var inits = dict.WithInterface<T>();
+
+			// Traits tagged with an instance name prefer inits with the same name.
+			// If a more specific init is not available, fall back to an unnamed init.
+			// If duplicate inits are defined, take the last to match standard yaml override expectations
+			if (info != null && !string.IsNullOrEmpty(info.InstanceName))
+				return inits.LastOrDefault(i => i.InstanceName == info.InstanceName) ??
+				       inits.LastOrDefault(i => string.IsNullOrEmpty(i.InstanceName));
+
+			// Untagged traits will only use untagged inits
+			return inits.LastOrDefault(i => string.IsNullOrEmpty(i.InstanceName));
+		}
+
+		public T Get<T>(TraitInfo info) where T : ActorInit
+		{
+			var init = GetOrDefault<T>(info);
+			if (init == null)
+				throw new InvalidOperationException("TypeDictionary does not contain instance of type `{0}`".F(typeof(T)));
+
+			return init;
+		}
+
+		public U GetValue<T, U>(TraitInfo info) where T : ValueActorInit<U>
+		{
+			return Get<T>(info).Value;
+		}
+
+		public U GetValue<T, U>(TraitInfo info, U fallback) where T : ValueActorInit<U>
+		{
+			var init = GetOrDefault<T>(info);
+			return init != null ? init.Value : fallback;
+		}
+
+		public bool Contains<T>(TraitInfo info) where T : ActorInit { return GetOrDefault<T>(info) != null; }
+
+		public Func<WRot> GetOrientation()
+		{
+			var facingInfo = Actor.TraitInfoOrDefault<IFacingInfo>();
+			if (facingInfo == null)
+				return () => WRot.Zero;
+
+			// Dynamic facing takes priority
+			var dynamicInit = dict.GetOrDefault<DynamicFacingInit>();
+			if (dynamicInit != null)
+			{
+				// TODO: Account for terrain slope
+				var getFacing = dynamicInit.Value;
+				return () => WRot.FromFacing(getFacing());
+			}
+
+			// Fall back to initial actor facing if an Init isn't available
+			var facingInit = dict.GetOrDefault<FacingInit>();
+			var facing = facingInit != null ? facingInit.Value : facingInfo.GetInitialFacing();
+			var orientation = WRot.FromFacing(facing);
+			return () => orientation;
+		}
+
+		public Func<WAngle> GetFacing()
+		{
+			var facingInfo = Actor.TraitInfoOrDefault<IFacingInfo>();
+			if (facingInfo == null)
+				return () => WAngle.Zero;
+
+			// Dynamic facing takes priority
+			var dynamicInit = dict.GetOrDefault<DynamicFacingInit>();
+			if (dynamicInit != null)
+			{
+				var getFacing = dynamicInit.Value;
+				return () => WAngle.FromFacing(getFacing());
+			}
+
+			// Fall back to initial actor facing if an Init isn't available
+			var facingInit = dict.GetOrDefault<FacingInit>();
+			var facing = WAngle.FromFacing(facingInit != null ? facingInit.Value : facingInfo.GetInitialFacing());
+			return () => facing;
+		}
 
 		public DamageState GetDamageState()
 		{
@@ -48,21 +128,21 @@ namespace OpenRA.Mods.Common.Graphics
 			if (health == null)
 				return DamageState.Undamaged;
 
-			var hf = health.Value(null);
+			var hf = health.Value;
 
 			if (hf <= 0)
 				return DamageState.Dead;
 
-			if (hf < 0.25f)
+			if (hf < 25)
 				return DamageState.Critical;
 
-			if (hf < 0.5f)
+			if (hf < 50)
 				return DamageState.Heavy;
 
-			if (hf < 0.75f)
+			if (hf < 75)
 				return DamageState.Medium;
 
-			if (hf < 1.0f)
+			if (hf < 100)
 				return DamageState.Light;
 
 			return DamageState.Undamaged;

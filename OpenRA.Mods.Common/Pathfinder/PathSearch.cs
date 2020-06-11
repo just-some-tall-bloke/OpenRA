@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -14,11 +15,14 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
+using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Pathfinder
 {
 	public sealed class PathSearch : BasePathSearch
 	{
+		// PERF: Maintain a pool of layers used for paths searches for each world. These searches are performed often
+		// so we wish to avoid the high cost of initializing a new search space every time by reusing the old ones.
 		static readonly ConditionalWeakTable<World, CellInfoLayerPool> LayerPoolTable = new ConditionalWeakTable<World, CellInfoLayerPool>();
 		static readonly ConditionalWeakTable<World, CellInfoLayerPool>.CreateValueCallback CreateLayerPool = world => new CellInfoLayerPool(world.Map);
 
@@ -42,42 +46,34 @@ namespace OpenRA.Mods.Common.Pathfinder
 			considered = new LinkedList<Pair<CPos, int>>();
 		}
 
-		public static IPathSearch Search(World world, MobileInfo mi, Actor self, bool checkForBlocked, Func<CPos, bool> goalCondition)
+		public static IPathSearch Search(World world, Locomotor locomotor, Actor self, BlockedByActor check, Func<CPos, bool> goalCondition)
 		{
-			var graph = new PathGraph(LayerPoolForWorld(world), mi, self, world, checkForBlocked);
+			var graph = new PathGraph(LayerPoolForWorld(world), locomotor, self, world, check);
 			var search = new PathSearch(graph);
 			search.isGoal = goalCondition;
 			search.heuristic = loc => 0;
 			return search;
 		}
 
-		public static IPathSearch FromPoint(World world, MobileInfo mi, Actor self, CPos from, CPos target, bool checkForBlocked)
+		public static IPathSearch FromPoint(World world, Locomotor locomotor, Actor self, CPos @from, CPos target, BlockedByActor check)
 		{
-			var graph = new PathGraph(LayerPoolForWorld(world), mi, self, world, checkForBlocked);
-			var search = new PathSearch(graph)
-			{
-				heuristic = DefaultEstimator(target)
-			};
-
-			search.isGoal = loc =>
-			{
-				var locInfo = search.Graph[loc];
-				return locInfo.EstimatedTotal - locInfo.CostSoFar == 0;
-			};
-
-			if (world.Map.Contains(from))
-				search.AddInitialCell(from);
-
-			return search;
+			return FromPoints(world, locomotor, self, new[] { from }, target, check);
 		}
 
-		public static IPathSearch FromPoints(World world, MobileInfo mi, Actor self, IEnumerable<CPos> froms, CPos target, bool checkForBlocked)
+		public static IPathSearch FromPoints(World world, Locomotor locomotor, Actor self, IEnumerable<CPos> froms, CPos target, BlockedByActor check)
 		{
-			var graph = new PathGraph(LayerPoolForWorld(world), mi, self, world, checkForBlocked);
-			var search = new PathSearch(graph)
-			{
-				heuristic = DefaultEstimator(target)
-			};
+			var graph = new PathGraph(LayerPoolForWorld(world), locomotor, self, world, check);
+			var search = new PathSearch(graph);
+			search.heuristic = search.DefaultEstimator(target);
+
+			// The search will aim for the shortest path by default, a weight of 100%.
+			// We can allow the search to find paths that aren't optimal by changing the weight.
+			// We provide a weight that limits the worst case length of the path,
+			// e.g. a weight of 110% will find a path no more than 10% longer than the shortest possible.
+			// The benefit of allowing the search to return suboptimal paths is faster computation time.
+			// The search can skip some areas of the search space, meaning it has less work to do.
+			// We allow paths up to 25% longer than the shortest, optimal path, to improve pathfinding time.
+			search.heuristicWeightPercentage = 125;
 
 			search.isGoal = loc =>
 			{
@@ -85,8 +81,9 @@ namespace OpenRA.Mods.Common.Pathfinder
 				return locInfo.EstimatedTotal - locInfo.CostSoFar == 0;
 			};
 
-			foreach (var sl in froms.Where(sl => world.Map.Contains(sl)))
-				search.AddInitialCell(sl);
+			foreach (var sl in froms)
+				if (world.Map.Contains(sl))
+					search.AddInitialCell(sl);
 
 			return search;
 		}
@@ -115,7 +112,7 @@ namespace OpenRA.Mods.Common.Pathfinder
 			var currentCell = Graph[currentMinNode];
 			Graph[currentMinNode] = new CellInfo(currentCell.CostSoFar, currentCell.EstimatedTotal, currentCell.PreviousPos, CellStatus.Closed);
 
-			if (Graph.CustomCost != null && Graph.CustomCost(currentMinNode) == Constants.InvalidNode)
+			if (Graph.CustomCost != null && Graph.CustomCost(currentMinNode) == PathGraph.CostForInvalidCell)
 				return currentMinNode;
 
 			foreach (var connection in Graph.GetConnections(currentMinNode))

@@ -1,16 +1,16 @@
-﻿#region Copyright & License Information
+#region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Linq;
-using System.Reflection;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Lint
@@ -21,7 +21,7 @@ namespace OpenRA.Mods.Common.Lint
 		{
 			foreach (var actorInfo in rules.Actors)
 			{
-				foreach (var traitInfo in actorInfo.Value.TraitInfos<ITraitInfo>())
+				foreach (var traitInfo in actorInfo.Value.TraitInfos<TraitInfo>())
 				{
 					var fields = traitInfo.GetType().GetFields().Where(f => f.HasAttribute<VoiceSetReferenceAttribute>());
 					foreach (var field in fields)
@@ -43,7 +43,7 @@ namespace OpenRA.Mods.Common.Lint
 		{
 			var soundInfo = rules.Voices[voiceSet.ToLowerInvariant()];
 
-			foreach (var traitInfo in actorInfo.TraitInfos<ITraitInfo>())
+			foreach (var traitInfo in actorInfo.TraitInfos<TraitInfo>())
 			{
 				var fields = traitInfo.GetType().GetFields().Where(f => f.HasAttribute<VoiceReferenceAttribute>());
 				foreach (var field in fields)

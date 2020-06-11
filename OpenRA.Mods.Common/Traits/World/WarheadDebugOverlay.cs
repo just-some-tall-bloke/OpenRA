@@ -1,34 +1,37 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System.Collections.Generic;
-using System.Drawing;
 using OpenRA.Graphics;
+using OpenRA.Mods.Common.Graphics;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("Part of the combat overlay from DeveloperMode. Attach this to the world actor.")]
-	public class WarheadDebugOverlayInfo : ITraitInfo
+	public class WarheadDebugOverlayInfo : TraitInfo
 	{
 		public readonly int DisplayDuration = 25;
 
-		public object Create(ActorInitializer init) { return new WarheadDebugOverlay(this); }
+		public override object Create(ActorInitializer init) { return new WarheadDebugOverlay(this); }
 	}
 
-	public class WarheadDebugOverlay : IPostRender
+	public class WarheadDebugOverlay : IRenderAnnotations
 	{
 		class WHImpact
 		{
 			public readonly WPos CenterPosition;
 			public readonly WDist[] Range;
+			public readonly Color Color;
 			public int Time;
 
 			public WDist OuterRange
@@ -36,10 +39,11 @@ namespace OpenRA.Mods.Common.Traits
 				get { return Range[Range.Length - 1]; }
 			}
 
-			public WHImpact(WPos pos, WDist[] range, int time)
+			public WHImpact(WPos pos, WDist[] range, int time, Color color)
 			{
 				CenterPosition = pos;
 				Range = range;
+				Color = color;
 				Time = time;
 			}
 		}
@@ -52,28 +56,23 @@ namespace OpenRA.Mods.Common.Traits
 			this.info = info;
 		}
 
-		public void AddImpact(WPos pos, WDist[] range)
+		public void AddImpact(WPos pos, WDist[] range, Color color)
 		{
-			impacts.Add(new WHImpact(pos, range, info.DisplayDuration));
+			impacts.Add(new WHImpact(pos, range, info.DisplayDuration, color));
 		}
 
-		public void RenderAfterWorld(WorldRenderer wr, Actor self)
+		IEnumerable<IRenderable> IRenderAnnotations.RenderAnnotations(Actor self, WorldRenderer wr)
 		{
 			foreach (var i in impacts)
 			{
 				var alpha = 255.0f * i.Time / info.DisplayDuration;
 				var rangeStep = alpha / i.Range.Length;
 
-				wr.DrawRangeCircle(i.CenterPosition, i.OuterRange, Color.FromArgb((int)alpha, Color.Red));
+				yield return new CircleAnnotationRenderable(i.CenterPosition, i.OuterRange, 1, Color.FromArgb((int)alpha, i.Color));
 
 				foreach (var r in i.Range)
 				{
-					var tl = wr.ScreenPosition(i.CenterPosition - new WVec(r.Length, r.Length, 0));
-					var br = wr.ScreenPosition(i.CenterPosition + new WVec(r.Length, r.Length, 0));
-					var rect = RectangleF.FromLTRB(tl.X, tl.Y, br.X, br.Y);
-
-					Game.Renderer.WorldLineRenderer.FillEllipse(rect, Color.FromArgb((int)alpha, Color.Red));
-
+					yield return new CircleAnnotationRenderable(i.CenterPosition, r, 1, Color.FromArgb((int)alpha, i.Color), true);
 					alpha -= rangeStep;
 				}
 
@@ -83,5 +82,7 @@ namespace OpenRA.Mods.Common.Traits
 
 			impacts.RemoveAll(i => i.Time == 0);
 		}
+
+		bool IRenderAnnotations.SpatiallyPartitionable { get { return false; } }
 	}
 }

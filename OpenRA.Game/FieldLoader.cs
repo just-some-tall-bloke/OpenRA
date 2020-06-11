@@ -1,29 +1,32 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text.RegularExpressions;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
+using OpenRA.Support;
 
 namespace OpenRA
 {
 	public static class FieldLoader
 	{
+		[Serializable]
 		public class MissingFieldsException : YamlException
 		{
 			public readonly string[] Missing;
@@ -37,10 +40,18 @@ namespace OpenRA
 				}
 			}
 
-			public MissingFieldsException(string[] missing, string header = null, string headerSingle = null) : base(null)
+			public MissingFieldsException(string[] missing, string header = null, string headerSingle = null)
+				: base(null)
 			{
 				Header = missing.Length > 1 ? header : headerSingle ?? header;
 				Missing = missing;
+			}
+
+			public override void GetObjectData(SerializationInfo info, StreamingContext context)
+			{
+				base.GetObjectData(info, context);
+				info.AddValue("Missing", Missing);
+				info.AddValue("Header", Header);
 			}
 		}
 
@@ -58,6 +69,11 @@ namespace OpenRA
 			new ConcurrentCache<Type, FieldLoadInfo[]>(BuildTypeLoadInfo);
 		static readonly ConcurrentCache<MemberInfo, bool> MemberHasTranslateAttribute =
 			new ConcurrentCache<MemberInfo, bool>(member => member.HasAttribute<TranslateAttribute>());
+
+		static readonly ConcurrentCache<string, BooleanExpression> BooleanExpressionCache =
+			new ConcurrentCache<string, BooleanExpression>(expression => new BooleanExpression(expression));
+		static readonly ConcurrentCache<string, IntegerExpression> IntegerExpressionCache =
+			new ConcurrentCache<string, IntegerExpression>(expression => new IntegerExpression(expression));
 
 		static readonly object TranslationsLock = new object();
 		static Dictionary<string, string> translations;
@@ -213,43 +229,8 @@ namespace OpenRA
 			else if (fieldType == typeof(Color))
 			{
 				Color color;
-				if (value != null && HSLColor.TryParseRGB(value, out color))
+				if (value != null && Color.TryParse(value, out color))
 					return color;
-
-				return InvalidValueAction(value, fieldType, fieldName);
-			}
-			else if (fieldType == typeof(Color[]))
-			{
-				if (value != null)
-				{
-					var parts = value.Split(',');
-					var colors = new Color[parts.Length];
-
-					for (var i = 0; i < colors.Length; i++)
-						if (!HSLColor.TryParseRGB(parts[i], out colors[i]))
-							return InvalidValueAction(value, fieldType, fieldName);
-
-					return colors;
-				}
-
-				return InvalidValueAction(value, fieldType, fieldName);
-			}
-			else if (fieldType == typeof(HSLColor))
-			{
-				if (value != null)
-				{
-					Color rgb;
-					if (HSLColor.TryParseRGB(value, out rgb))
-						return new HSLColor(rgb);
-
-					// Allow old HSLColor/ColorRamp formats to be parsed as HSLColor
-					var parts = value.Split(',');
-					if (parts.Length == 3 || parts.Length == 4)
-						return new HSLColor(
-							(byte)Exts.ParseIntegerInvariant(parts[0]).Clamp(0, 255),
-							(byte)Exts.ParseIntegerInvariant(parts[1]).Clamp(0, 255),
-							(byte)Exts.ParseIntegerInvariant(parts[2]).Clamp(0, 255));
-				}
 
 				return InvalidValueAction(value, fieldType, fieldName);
 			}
@@ -260,6 +241,10 @@ namespace OpenRA
 					return res;
 
 				return InvalidValueAction(value, fieldType, fieldName);
+			}
+			else if (fieldType == typeof(HotkeyReference))
+			{
+				return Game.ModData.Hotkeys[value];
 			}
 			else if (fieldType == typeof(WDist))
 			{
@@ -337,7 +322,7 @@ namespace OpenRA
 					if (parts.Length == 3)
 					{
 						int rr, rp, ry;
-						if (Exts.TryParseIntegerInvariant(value, out rr) && Exts.TryParseIntegerInvariant(value, out rp) && Exts.TryParseIntegerInvariant(value, out ry))
+						if (Exts.TryParseIntegerInvariant(parts[0], out rr) && Exts.TryParseIntegerInvariant(parts[1], out rp) && Exts.TryParseIntegerInvariant(parts[2], out ry))
 							return new WRot(new WAngle(rr), new WAngle(rp), new WAngle(ry));
 					}
 				}
@@ -364,6 +349,60 @@ namespace OpenRA
 
 				return InvalidValueAction(value, fieldType, fieldName);
 			}
+			else if (fieldType == typeof(CVec[]))
+			{
+				if (value != null)
+				{
+					var parts = value.Split(',');
+
+					if (parts.Length % 2 != 0)
+						return InvalidValueAction(value, fieldType, fieldName);
+
+					var vecs = new CVec[parts.Length / 2];
+					for (var i = 0; i < vecs.Length; i++)
+					{
+						int rx, ry;
+						if (int.TryParse(parts[2 * i], out rx) && int.TryParse(parts[2 * i + 1], out ry))
+							vecs[i] = new CVec(rx, ry);
+					}
+
+					return vecs;
+				}
+
+				return InvalidValueAction(value, fieldType, fieldName);
+			}
+			else if (fieldType == typeof(BooleanExpression))
+			{
+				if (value != null)
+				{
+					try
+					{
+						return BooleanExpressionCache[value];
+					}
+					catch (InvalidDataException e)
+					{
+						throw new YamlException(e.Message);
+					}
+				}
+
+				return InvalidValueAction(value, fieldType, fieldName);
+			}
+			else if (fieldType == typeof(IntegerExpression))
+			{
+				if (value != null)
+				{
+					try
+					{
+						return IntegerExpressionCache[value];
+					}
+					catch (InvalidDataException e)
+					{
+						throw new YamlException(e.Message);
+					}
+				}
+
+				return InvalidValueAction(value, fieldType, fieldName);
+			}
 			else if (fieldType.IsEnum)
 			{
 				try
@@ -375,37 +414,39 @@ namespace OpenRA
 					return InvalidValueAction(value, fieldType, fieldName);
 				}
 			}
-			else if (fieldType == typeof(ImageFormat))
+			else if (fieldType == typeof(bool))
+			{
+				bool result;
+				if (bool.TryParse(value.ToLowerInvariant(), out result))
+					return result;
+
+				return InvalidValueAction(value, fieldType, fieldName);
+			}
+			else if (fieldType == typeof(int2[]))
 			{
 				if (value != null)
 				{
-					switch (value.ToLowerInvariant())
-					{
-					case "bmp":
-						return ImageFormat.Bmp;
-					case "gif":
-						return ImageFormat.Gif;
-					case "jpg":
-					case "jpeg":
-						return ImageFormat.Jpeg;
-					case "tif":
-					case "tiff":
-						return ImageFormat.Tiff;
-					default:
-						return ImageFormat.Png;
-					}
+					var parts = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+					if (parts.Length % 2 != 0)
+						return InvalidValueAction(value, fieldType, fieldName);
+
+					var ints = new int2[parts.Length / 2];
+					for (var i = 0; i < ints.Length; i++)
+						ints[i] = new int2(Exts.ParseIntegerInvariant(parts[2 * i]), Exts.ParseIntegerInvariant(parts[2 * i + 1]));
+
+					return ints;
 				}
 
 				return InvalidValueAction(value, fieldType, fieldName);
 			}
-			else if (fieldType == typeof(bool))
-				return ParseYesNo(value, fieldType, fieldName);
 			else if (fieldType.IsArray && fieldType.GetArrayRank() == 1)
 			{
 				if (value == null)
 					return Array.CreateInstance(fieldType.GetElementType(), 0);
 
-				var parts = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+				var options = field != null && field.HasAttribute<AllowEmptyEntriesAttribute>() ?
+					StringSplitOptions.None : StringSplitOptions.RemoveEmptyEntries;
+				var parts = value.Split(new char[] { ',' }, options);
 
 				var ret = Array.CreateInstance(fieldType.GetElementType(), parts.Length);
 				for (var i = 0; i < parts.Length; i++)
@@ -454,6 +495,9 @@ namespace OpenRA
 				if (value != null)
 				{
 					var parts = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+					if (parts.Length != 2)
+						return InvalidValueAction(value, fieldType, fieldName);
+
 					return new int2(Exts.ParseIntegerInvariant(parts[0]), Exts.ParseIntegerInvariant(parts[1]));
 				}
 
@@ -476,6 +520,26 @@ namespace OpenRA
 
 				return InvalidValueAction(value, fieldType, fieldName);
 			}
+			else if (fieldType == typeof(float3))
+			{
+				if (value != null)
+				{
+					var parts = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+					float x = 0;
+					float y = 0;
+					float z = 0;
+					float.TryParse(parts[0], NumberStyles.Float, NumberFormatInfo.InvariantInfo, out x);
+					float.TryParse(parts[1], NumberStyles.Float, NumberFormatInfo.InvariantInfo, out y);
+
+					// z component is optional for compatibility with older float2 definitions
+					if (parts.Length > 2)
+						float.TryParse(parts[2], NumberStyles.Float, NumberFormatInfo.InvariantInfo, out z);
+
+					return new float3(x, y, z);
+				}
+
+				return InvalidValueAction(value, fieldType, fieldName);
+			}
 			else if (fieldType == typeof(Rectangle))
 			{
 				if (value != null)
@@ -490,14 +554,13 @@ namespace OpenRA
 
 				return InvalidValueAction(value, fieldType, fieldName);
 			}
-			else if (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(Bits<>))
+			else if (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(BitSet<>))
 			{
 				if (value != null)
 				{
 					var parts = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-					var argTypes = new Type[] { typeof(string[]) };
-					var argValues = new object[] { parts };
-					return fieldType.GetConstructor(argTypes).Invoke(argValues);
+					var ctor = fieldType.GetConstructor(new[] { typeof(string[]) });
+					return ctor.Invoke(new object[] { parts.Select(p => p.Trim()).ToArray() });
 				}
 
 				return InvalidValueAction(value, fieldType, fieldName);
@@ -533,20 +596,6 @@ namespace OpenRA
 
 			UnknownFieldAction("[Type] {0}".F(value), fieldType);
 			return null;
-		}
-
-		static object ParseYesNo(string p, Type fieldType, string field)
-		{
-			if (string.IsNullOrEmpty(p))
-				return InvalidValueAction(p, fieldType, field);
-
-			p = p.ToLowerInvariant();
-			if (p == "yes") return true;
-			if (p == "true") return true;
-			if (p == "no") return false;
-			if (p == "false") return false;
-
-			return InvalidValueAction(p, fieldType, field);
 		}
 
 		public sealed class FieldLoadInfo
@@ -610,6 +659,13 @@ namespace OpenRA
 		}
 
 		[AttributeUsage(AttributeTargets.Field)]
+		public sealed class AllowEmptyEntriesAttribute : SerializeAttribute
+		{
+			public AllowEmptyEntriesAttribute()
+				: base(allowEmptyEntries: true) { }
+		}
+
+		[AttributeUsage(AttributeTargets.Field)]
 		public sealed class LoadUsingAttribute : SerializeAttribute
 		{
 			public LoadUsingAttribute(string loader, bool required = false)
@@ -632,11 +688,13 @@ namespace OpenRA
 			public bool FromYamlKey;
 			public bool DictionaryFromYamlKey;
 			public bool Required;
+			public bool AllowEmptyEntries;
 
-			public SerializeAttribute(bool serialize = true, bool required = false)
+			public SerializeAttribute(bool serialize = true, bool required = false, bool allowEmptyEntries = false)
 			{
 				Serialize = serialize;
 				Required = required;
+				AllowEmptyEntries = allowEmptyEntries;
 			}
 
 			internal Func<MiniYaml, object> GetLoader(Type type)
@@ -704,7 +762,7 @@ namespace OpenRA
 		}
 	}
 
-	// mirrors DescriptionAttribute from System.ComponentModel but we dont want to have to use that everywhere.
+	// Mirrors DescriptionAttribute from System.ComponentModel but we don't want to have to use that everywhere.
 	[AttributeUsage(AttributeTargets.All)]
 	public sealed class DescAttribute : Attribute
 	{

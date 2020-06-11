@@ -1,29 +1,39 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
+using OpenRA.Graphics;
+using OpenRA.Mods.Common.Lint;
 using OpenRA.Network;
+using OpenRA.Primitives;
 using OpenRA.Widgets;
 
 namespace OpenRA.Mods.Common.Widgets.Logic
 {
+	[ChromeLogicArgsHotkeys("CombinedViewKey", "WorldViewKey")]
 	public class ObserverShroudSelectorLogic : ChromeLogic
 	{
 		readonly CameraOption combined, disableShroud;
 		readonly IOrderedEnumerable<IGrouping<int, CameraOption>> teams;
 		readonly bool limitViews;
 
+		readonly HotkeyReference combinedViewKey = new HotkeyReference();
+		readonly HotkeyReference worldViewKey = new HotkeyReference();
+
+		readonly World world;
+
 		CameraOption selected;
+		LabelWidget shroudLabel;
 
 		class CameraOption
 		{
@@ -38,10 +48,16 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			{
 				Player = p;
 				Label = p.PlayerName;
-				Color = p.Color.RGB;
+				Color = p.Color;
 				Faction = p.Faction.InternalName;
 				IsSelected = () => p.World.RenderPlayer == p;
-				OnClick = () => { p.World.RenderPlayer = p; logic.selected = this; p.World.Selection.Clear(); };
+				OnClick = () =>
+				{
+					p.World.RenderPlayer = p;
+					logic.selected = this;
+					p.World.Selection.Clear();
+					WidgetUtils.BindPlayerNameAndStatus(logic.shroudLabel, p);
+				};
 			}
 
 			public CameraOption(ObserverShroudSelectorLogic logic, World w, string label, Player p)
@@ -56,11 +72,25 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		}
 
 		[ObjectCreator.UseCtor]
-		public ObserverShroudSelectorLogic(Widget widget, World world)
+		public ObserverShroudSelectorLogic(Widget widget, ModData modData, World world, WorldRenderer worldRenderer, Dictionary<string, MiniYaml> logicArgs)
 		{
+			this.world = world;
+
+			MiniYaml yaml;
+			if (logicArgs.TryGetValue("CombinedViewKey", out yaml))
+				combinedViewKey = modData.Hotkeys[yaml.Value];
+
+			if (logicArgs.TryGetValue("WorldViewKey", out yaml))
+				worldViewKey = modData.Hotkeys[yaml.Value];
+
 			limitViews = world.Map.Visibility.HasFlag(MapVisibility.MissionSelector);
 
 			var groups = new Dictionary<string, IEnumerable<CameraOption>>();
+
+			combined = new CameraOption(this, world, "All Players", world.Players.First(p => p.InternalName == "Everyone"));
+			disableShroud = new CameraOption(this, world, "Disable Shroud", null);
+			if (!limitViews)
+				groups.Add("Other", new List<CameraOption>() { combined, disableShroud });
 
 			teams = world.Players.Where(p => !p.NonCombatant && p.Playable)
 				.Select(p => new CameraOption(this, p))
@@ -74,11 +104,6 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				groups.Add(label, t);
 			}
 
-			combined = new CameraOption(this, world, "All Players", world.Players.First(p => p.InternalName == "Everyone"));
-			disableShroud = new CameraOption(this, world, "Disable Shroud", null);
-			if (!limitViews)
-				groups.Add("Other", new List<CameraOption>() { combined, disableShroud });
-
 			var shroudSelector = widget.Get<DropDownButtonWidget>("SHROUD_SELECTOR");
 			shroudSelector.OnMouseDown = _ =>
 			{
@@ -89,8 +114,12 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 					var label = item.Get<LabelWidget>("LABEL");
 					label.IsVisible = () => showFlag;
-					label.GetText = () => option.Label;
 					label.GetColor = () => option.Color;
+
+					if (showFlag)
+						WidgetUtils.BindPlayerNameAndStatus(label, option.Player);
+					else
+						label.GetText = () => option.Label;
 
 					var flag = item.Get<ImageWidget>("FLAG");
 					flag.IsVisible = () => showFlag;
@@ -108,7 +137,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 				shroudSelector.ShowDropDown("SPECTATOR_DROPDOWN_TEMPLATE", 400, groups, setupItem);
 			};
 
-			var shroudLabel = shroudSelector.Get<LabelWidget>("LABEL");
+			shroudLabel = shroudSelector.Get<LabelWidget>("LABEL");
 			shroudLabel.IsVisible = () => selected.Faction != null;
 			shroudLabel.GetText = () => selected.Label;
 			shroudLabel.GetColor = () => selected.Color;
@@ -124,18 +153,20 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			shroudLabelAlt.GetColor = () => selected.Color;
 
 			var keyhandler = shroudSelector.Get<LogicKeyListenerWidget>("SHROUD_KEYHANDLER");
-			keyhandler.OnKeyPress = HandleKeyPress;
+			keyhandler.AddHandler(HandleKeyPress);
 
-			selected = limitViews ? groups.First().Value.First() : disableShroud;
+			selected = limitViews ? groups.First().Value.First() : world.WorldActor.Owner.Shroud.ExploreMapEnabled ? combined : disableShroud;
 			selected.OnClick();
+
+			// Enable zooming out to fractional zoom levels
+			worldRenderer.Viewport.UnlockMinimumZoom(0.5f);
 		}
 
 		public bool HandleKeyPress(KeyInput e)
 		{
-			if (e.Event == KeyInputEvent.Down)
+			if (e.Event == KeyInputEvent.Down && !e.IsRepeat)
 			{
-				var h = Hotkey.FromKeyInput(e);
-				if (h == Game.Settings.Keys.ObserverCombinedView && !limitViews)
+				if (combinedViewKey.IsActivatedBy(e) && !limitViews)
 				{
 					selected = combined;
 					selected.OnClick();
@@ -143,7 +174,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					return true;
 				}
 
-				if (h == Game.Settings.Keys.ObserverWorldView && !limitViews)
+				if (worldViewKey.IsActivatedBy(e) && !limitViews)
 				{
 					selected = disableShroud;
 					selected.OnClick();
@@ -169,6 +200,23 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 
 			return false;
+		}
+
+		public override void Tick()
+		{
+			// Fix the selector if something else has changed the render player
+			if (selected != null && world.RenderPlayer != selected.Player)
+			{
+				if (combined.Player == world.RenderPlayer)
+					combined.OnClick();
+				else if (disableShroud.Player == world.RenderPlayer)
+					disableShroud.OnClick();
+				else
+					foreach (var group in teams)
+						foreach (var option in group)
+							if (option.Player == world.RenderPlayer)
+								option.OnClick();
+			}
 		}
 	}
 }

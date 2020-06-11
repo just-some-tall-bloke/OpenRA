@@ -4,9 +4,6 @@ e1:
 	stand2:
 		Start: 8
 		Facings: 8
-	stand3:
-		Start: 128
-		Length: 16
 	run:
 		Start: 16
 		Length: 6
@@ -29,7 +26,11 @@ e1:
 		Length: 4
 		Facings: 8
 		Tick: 100
-	standup-0:
+	liedown:
+		Start: 128
+		Length: 2
+		Facings: 8
+	standup:
 		Start: 176
 		Length: 2
 		Facings: 8
@@ -37,6 +38,8 @@ e1:
 		Start: 192
 		Length: 8
 		Facings: 8
+	parachute:
+		Start: 377
 	idle1:
 		Start: 256
 		Length: 16
@@ -61,6 +64,7 @@ e1:
 		Start: 324
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -94,9 +98,6 @@ sniper:
 		Start: 64
 		Length: 16
 		Facings: 8
-	stand3:
-		Start: 192
-		Length: 16
 	prone-stand:
 		Start: 208
 		Stride: 4
@@ -110,6 +111,10 @@ sniper:
 		Length: 4
 		Facings: 8
 		Tick: 100
+	liedown:
+		Start: 192
+		Length: 2
+		Facings: 8
 	standup:
 		Start: 240
 		Length: 2
@@ -142,6 +147,7 @@ sniper:
 		Start: 452
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -176,6 +182,8 @@ e3:
 		Start: 64
 		Length: 8
 		Facings: 8
+	parachute:
+		Start: 393
 	idle1:
 		Start: 272
 		Length: 14
@@ -200,6 +208,7 @@ e3:
 		Start: 340
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -243,6 +252,8 @@ e6:
 		Length: 6
 		Facings: 8
 		Tick: 100
+	parachute:
+		Start: 210
 	idle1:
 		Start: 121
 		Length: 8
@@ -267,6 +278,7 @@ e6:
 		Start: 182
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -311,11 +323,7 @@ medi:
 		Start: 114
 		Length: 2
 		Facings: 8
-	idle1:
-		Start: 163
-		Length: 14
-		Tick: 120
-	idle2:
+	idle:
 		Start: 178
 		Length: 14
 		Tick: 120
@@ -335,6 +343,7 @@ medi:
 		Start: 229
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -358,7 +367,7 @@ medi:
 		Facings: 8
 		Tick: 100
 	icon: mediicon
-		
+
 mech:
 	stand:
 		Facings: 8
@@ -375,11 +384,7 @@ mech:
 		Start: 114
 		Length: 2
 		Facings: 8
-	idle1:
-		Start: 163
-		Length: 14
-		Tick: 120
-	idle2:
+	idle:
 		Start: 178
 		Length: 14
 		Tick: 120
@@ -399,6 +404,7 @@ mech:
 		Start: 229
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -438,6 +444,8 @@ e2:
 		Start: 64
 		Length: 20
 		Facings: 8
+	parachute:
+		Start: 505
 	idle1:
 		Start: 384
 		Length: 14
@@ -462,6 +470,7 @@ e2:
 		Start: 452
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -497,11 +506,21 @@ e2:
 dog:
 	stand:
 		Facings: 8
-	run:
+	walk:
 		Start: 8
 		Length: 6
 		Facings: 8
 		Tick: 80
+	run:
+		Start: 56
+		Length: 6
+		Facings: 8
+		Tick: 80
+	eat:
+		Start: 104
+		Length: 14
+		Facings: 8
+		Tick: 120
 	idle1:
 		Start: 216
 		Length: 7
@@ -535,7 +554,7 @@ dog:
 		TilesetOverrides:
 			DESERT: TEMPERAT
 			INTERIOR: TEMPERAT
-	shoot: dogbullt
+	jump: dogbullt
 		Length: 4
 		Facings: 8
 	icon: dogicon
@@ -579,6 +598,7 @@ spy:
 		Start: 324
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -619,6 +639,10 @@ thf:
 		Length: 6
 		Facings: 8
 		Tick: 100
+	idle:
+		Start: 120
+		Length: 19
+		Tick: 120
 	die1:
 		Start: 139
 		Length: 8
@@ -635,6 +659,7 @@ thf:
 		Start: 175
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -659,54 +684,6 @@ thf:
 		Tick: 80
 	icon: thficon
 
-hijacker:
-	stand: thf
-		Facings: 8
-	run: thf
-		Start: 8
-		Length: 6
-		Facings: 8
-		Tick: 100
-	die1: thf
-		Start: 139
-		Length: 8
-	die2: thf
-		Start: 147
-		Length: 8
-	die3: thf
-		Start: 155
-		Length: 8
-	die4: thf
-		Start: 163
-		Length: 12
-	die5: thf
-		Start: 175
-		Length: 18
-	die6: electro
-		Length: *
-		UseTilesetExtension: true
-		TilesetOverrides:
-			DESERT: TEMPERAT
-			INTERIOR: TEMPERAT
-	die-crushed: corpse1
-		Length: 6
-		Tick: 1600
-		ZOffset: -511
-		UseTilesetExtension: true
-		TilesetOverrides:
-			DESERT: TEMPERAT
-			INTERIOR: TEMPERAT
-	prone-stand: thf
-		Start: 72
-		Stride: 4
-		Facings: 8
-	prone-run: thf
-		Start: 72
-		Length: 4
-		Facings: 8
-		Tick: 80
-	icon: hijackericon
-
 e7:
 	stand:
 		Facings: 8
@@ -725,7 +702,7 @@ e7:
 		Tick: 120
 	idle2:
 		Start: 248
-		Length: 15
+		Length: 14
 		Tick: 120
 	die1:
 		Start: 262
@@ -743,6 +720,7 @@ e7:
 		Start: 298
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -790,6 +768,8 @@ e4:
 		Start: 64
 		Length: 16
 		Facings: 8
+	parachute:
+		Start: 528
 	idle1:
 		Start: 384
 		Length: 14
@@ -814,6 +794,7 @@ e4:
 		Start: 452
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -851,22 +832,23 @@ gnrl:
 		Facings: 8
 	run:
 		Start: 8
-		Length: 5
+		Length: 6
 		Facings: 8
-		Tick: 80
+		Tick: 100
 	shoot:
 		Start: 56
 		Length: 4
 		Facings: 8
 	prone-stand:
-		Start: 88
-		Stride: 2
+		Start: 104
+		Stride: 4
 		Facings: 8
 	prone-run:
 		Start: 104
 		Length: 4
 		Facings: 8
-	standup-0:
+		Tick: 100
+	standup:
 		Start: 136
 		Length: 2
 		Facings: 8
@@ -894,6 +876,7 @@ gnrl:
 		Start: 246
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -923,9 +906,6 @@ shok:
 		Start: 64
 		Length: 16
 		Facings: 8
-	stand3:
-		Start: 192
-		Length: 16
 	prone-stand:
 		Start: 208
 		Stride: 4
@@ -939,6 +919,10 @@ shok:
 		Length: 4
 		Facings: 8
 		Tick: 120
+	liedown:
+		Start: 192
+		Length: 2
+		Facings: 8
 	standup:
 		Start: 240
 		Length: 2
@@ -947,6 +931,8 @@ shok:
 		Start: 256
 		Length: 16
 		Facings: 8
+	parachute:
+		Start: 528
 	idle1:
 		Start: 384
 		Length: 14
@@ -971,6 +957,7 @@ shok:
 		Start: 452
 		Length: 18
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -990,8 +977,6 @@ c1:
 	stand:
 		Facings: 8
 	panic-stand:
-		Start: 8
-		Stride: 6
 		Facings: 8
 	panic-run:
 		Start: 8
@@ -1011,12 +996,13 @@ c1:
 		Start: 168
 		Length: 12
 	die4:
+		Start: 168
+		Length: 12
+	die5:
 		Start: 180
 		Length: 18
-	die5:
-		Start: 160
-		Length: 8
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1040,8 +1026,6 @@ c2:
 	stand:
 		Facings: 8
 	panic-stand:
-		Start: 8
-		Stride: 6
 		Facings: 8
 	panic-run:
 		Start: 8
@@ -1061,12 +1045,13 @@ c2:
 		Start: 168
 		Length: 12
 	die4:
+		Start: 168
+		Length: 12
+	die5:
 		Start: 180
 		Length: 18
-	die5:
-		Start: 160
-		Length: 8
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1090,8 +1075,6 @@ c3:
 	stand:
 		Facings: 8
 	panic-stand:
-		Start: 8
-		Stride: 6
 		Facings: 8
 	panic-run:
 		Start: 8
@@ -1111,12 +1094,13 @@ c3:
 		Start: 168
 		Length: 12
 	die4:
+		Start: 168
+		Length: 12
+	die5:
 		Start: 180
 		Length: 18
-	die5:
-		Start: 160
-		Length: 8
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1139,13 +1123,11 @@ c3:
 einstein:
 	stand:
 		Facings: 8
+	panic-stand:
+		Facings: 8
 	panic-run:
 		Start: 8
 		Length: 6
-		Facings: 8
-	panic-stand:
-		Start: 8
-		Stride: 6
 		Facings: 8
 	run:
 		Start: 56
@@ -1153,21 +1135,22 @@ einstein:
 		Facings: 8
 		Tick: 80
 	die1:
-		Start: 115
+		Start: 120
 		Length: 8
 	die2:
-		Start: 123
+		Start: 128
 		Length: 8
 	die3:
-		Start: 135
+		Start: 136
 		Length: 12
 	die4:
-		Start: 147
-		Length: 17
+		Start: 136
+		Length: 12
 	die5:
-		Start: 123
-		Length: 8
+		Start: 148
+		Length: 17
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1185,13 +1168,11 @@ einstein:
 delphi:
 	stand:
 		Facings: 8
+	panic-stand:
+		Facings: 8
 	panic-run:
 		Start: 8
 		Length: 6
-		Facings: 8
-	panic-stand:
-		Start: 8
-		Stride: 6
 		Facings: 8
 	run:
 		Start: 56
@@ -1199,21 +1180,22 @@ delphi:
 		Facings: 8
 		Tick: 80
 	die1:
-		Start: 115
+		Start: 329
 		Length: 8
 	die2:
-		Start: 123
+		Start: 337
 		Length: 8
 	die3:
-		Start: 135
+		Start: 345
 		Length: 12
 	die4:
-		Start: 147
-		Length: 17
+		Start: 345
+		Length: 12
 	die5:
-		Start: 123
-		Length: 8
+		Start: 357
+		Length: 17
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1231,13 +1213,11 @@ delphi:
 chan:
 	stand:
 		Facings: 8
+	panic-stand:
+		Facings: 8
 	panic-run:
 		Start: 8
 		Length: 6
-		Facings: 8
-	panic-stand:
-		Start: 8
-		Stride: 6
 		Facings: 8
 	run:
 		Start: 56
@@ -1245,21 +1225,22 @@ chan:
 		Facings: 8
 		Tick: 80
 	die1:
-		Start: 115
+		Start: 120
 		Length: 8
 	die2:
-		Start: 123
+		Start: 128
 		Length: 8
 	die3:
-		Start: 135
+		Start: 136
 		Length: 12
 	die4:
-		Start: 147
-		Length: 17
+		Start: 136
+		Length: 12
 	die5:
-		Start: 123
-		Length: 8
+		Start: 148
+		Length: 17
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1279,11 +1260,12 @@ zombie:
 		Facings: 8
 	stand2:
 		Start: 8
-		Length: 8
+		Facings: 8
 	run:
 		Start: 16
 		Length: 6
 		Facings: 8
+		Tick: 100
 	bite:
 		Start: 64
 		Length: 4
@@ -1294,20 +1276,21 @@ zombie:
 		Tick: 120
 	die1:
 		Start: 106
-		Length: 7
+		Length: 8
 	die2:
 		Start: 106
-		Length: 7
+		Length: 8
 	die3:
 		Start: 106
-		Length: 7
+		Length: 8
 	die4:
 		Start: 106
-		Length: 7
+		Length: 8
 	die5:
 		Start: 114
-		Length: 18
+		Length: 19
 	die6: electro
+		Frames: 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		Length: *
 		UseTilesetExtension: true
 		TilesetOverrides:
@@ -1324,24 +1307,65 @@ zombie:
 	icon: zombicon
 
 ant:
-	stand:
+	stand: ant1
 		Facings: 8
-	stand2:
-		Start: 8
-		Length: 8
-	run:
+	run: ant1
 		Start: 8
 		Length: 8
 		Facings: 8
-	bite:
+	bite: ant1
 		Start: 72
 		Length: 4
 		Facings: 8
-	die:
+	die: ant1
 		Start: 104
 		Length: 8
 		Tick: 300
-	die-crushed:
+	die-crushed: ant1
+		Start: 104
+		Length: 8
+		Tick: 400
+		ZOffset: -511
+	icon: anticon
+
+fireant:
+	stand: ant2
+		Facings: 8
+	run: ant2
+		Start: 8
+		Length: 8
+		Facings: 8
+	bite: ant2
+		Start: 72
+		Length: 4
+		Facings: 8
+	die: ant2
+		Start: 104
+		Length: 8
+		Tick: 300
+	die-crushed: ant2
+		Start: 104
+		Length: 8
+		Tick: 400
+		ZOffset: -511
+	icon: anticon
+
+scoutant:
+	stand: ant3
+		Facings: 8
+	run: ant3
+		Start: 8
+		Length: 8
+		Facings: 8
+	bite: ant3
+		Start: 72
+		Length: 4
+		Facings: 8
+	die: ant3
+		Start: 104
+		Length: 8
+		Tick: 300
+	die-crushed: ant3
 		Start: 104
 		Length: 8
 		Tick: 400

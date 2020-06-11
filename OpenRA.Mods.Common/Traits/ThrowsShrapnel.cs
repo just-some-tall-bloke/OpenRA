@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -15,9 +16,10 @@ using OpenRA.Traits;
 namespace OpenRA.Mods.Common.Traits
 {
 	[Desc("Throws particles when the actor is destroyed that do damage on impact.")]
-	public class ThrowsShrapnelInfo : ITraitInfo, IRulesetLoaded
+	public class ThrowsShrapnelInfo : ConditionalTraitInfo, IRulesetLoaded
 	{
-		[WeaponReference, FieldLoader.Require]
+		[WeaponReference]
+		[FieldLoader.Require]
 		[Desc("The weapons used for shrapnel.")]
 		public readonly string[] Weapons = { };
 
@@ -29,28 +31,36 @@ namespace OpenRA.Mods.Common.Traits
 
 		public WeaponInfo[] WeaponInfos { get; private set; }
 
-		public object Create(ActorInitializer actor) { return new ThrowsShrapnel(this); }
-		public void RulesetLoaded(Ruleset rules, ActorInfo ai)
+		public override object Create(ActorInitializer actor) { return new ThrowsShrapnel(this); }
+		public override void RulesetLoaded(Ruleset rules, ActorInfo ai)
 		{
-			WeaponInfos = Weapons.Select(w => rules.Weapons[w.ToLowerInvariant()]).ToArray();
+			base.RulesetLoaded(rules, ai);
+
+			WeaponInfos = Weapons.Select(w =>
+			{
+				WeaponInfo weapon;
+				var weaponToLower = w.ToLowerInvariant();
+				if (!rules.Weapons.TryGetValue(weaponToLower, out weapon))
+					throw new YamlException("Weapons Ruleset does not contain an entry '{0}'".F(weaponToLower));
+				return weapon;
+			}).ToArray();
 		}
 	}
 
-	class ThrowsShrapnel : INotifyKilled
+	class ThrowsShrapnel : ConditionalTrait<ThrowsShrapnelInfo>, INotifyKilled
 	{
-		readonly ThrowsShrapnelInfo info;
-
 		public ThrowsShrapnel(ThrowsShrapnelInfo info)
-		{
-			this.info = info;
-		}
+			: base(info) { }
 
 		public void Killed(Actor self, AttackInfo attack)
 		{
-			foreach (var wep in info.WeaponInfos)
+			if (IsTraitDisabled)
+				return;
+
+			foreach (var wep in Info.WeaponInfos)
 			{
-				var pieces = self.World.SharedRandom.Next(info.Pieces[0], info.Pieces[1]);
-				var range = self.World.SharedRandom.Next(info.Range[0].Length, info.Range[1].Length);
+				var pieces = self.World.SharedRandom.Next(Info.Pieces[0], Info.Pieces[1]);
+				var range = self.World.SharedRandom.Next(Info.Range[0].Length, Info.Range[1].Length);
 
 				for (var i = 0; pieces > i; i++)
 				{
@@ -58,7 +68,8 @@ namespace OpenRA.Mods.Common.Traits
 					var args = new ProjectileArgs
 					{
 						Weapon = wep,
-						Facing = self.World.SharedRandom.Next(-1, 255),
+						Facing = new WAngle(self.World.SharedRandom.Next(1024)),
+						CurrentMuzzleFacing = () => WAngle.Zero,
 
 						DamageModifiers = self.TraitsImplementing<IFirepowerModifier>()
 							.Select(a => a.GetFirepowerModifier()).ToArray(),
@@ -70,6 +81,7 @@ namespace OpenRA.Mods.Common.Traits
 							.Select(a => a.GetRangeModifier()).ToArray(),
 
 						Source = self.CenterPosition,
+						CurrentSource = () => self.CenterPosition,
 						SourceActor = self,
 						PassiveTarget = self.CenterPosition + new WVec(range, 0, 0).Rotate(rotation)
 					};
@@ -83,7 +95,7 @@ namespace OpenRA.Mods.Common.Traits
 								self.World.Add(projectile);
 
 							if (args.Weapon.Report != null && args.Weapon.Report.Any())
-								Game.Sound.Play(args.Weapon.Report.Random(self.World.SharedRandom), self.CenterPosition);
+								Game.Sound.Play(SoundType.World, args.Weapon.Report, self.World, self.CenterPosition);
 						}
 					});
 				}

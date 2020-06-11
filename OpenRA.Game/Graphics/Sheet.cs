@@ -1,18 +1,18 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-using OpenRA.FileSystem;
+using System.IO;
+using OpenRA.FileFormats;
+using OpenRA.Primitives;
 
 namespace OpenRA.Graphics
 {
@@ -47,16 +47,12 @@ namespace OpenRA.Graphics
 			Size = texture.Size;
 		}
 
-		public Sheet(SheetType type, string filename)
+		public Sheet(SheetType type, Stream stream)
 		{
-			using (var stream = GlobalFileSystem.Open(filename))
-			using (var bitmap = (Bitmap)Image.FromStream(stream))
-			{
-				Size = bitmap.Size;
-				data = new byte[4 * Size.Width * Size.Height];
-
-				Util.FastCopyIntoSprite(new Sprite(this, bitmap.Bounds(), TextureChannel.Red), bitmap);
-			}
+			var png = new Png(stream);
+			Size = new Size(png.Width, png.Height);
+			data = new byte[4 * Size.Width * Size.Height];
+			Util.FastCopyIntoSprite(new Sprite(this, new Rectangle(0, 0, png.Width, png.Height), TextureChannel.Red), png);
 
 			Type = type;
 			ReleaseBuffer();
@@ -66,7 +62,7 @@ namespace OpenRA.Graphics
 		{
 			if (texture == null)
 			{
-				texture = Game.Renderer.Device.CreateTexture();
+				texture = Game.Renderer.Context.CreateTexture();
 				dirty = true;
 			}
 
@@ -81,48 +77,37 @@ namespace OpenRA.Graphics
 			return texture;
 		}
 
-		public Bitmap AsBitmap()
+		public Png AsPng()
 		{
-			var d = GetData();
-			var dataStride = 4 * Size.Width;
-			var bitmap = new Bitmap(Size.Width, Size.Height);
+			var data = GetData();
 
-			var bd = bitmap.LockBits(bitmap.Bounds(),
-				ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-			for (var y = 0; y < Size.Height; y++)
-				Marshal.Copy(d, y * dataStride, IntPtr.Add(bd.Scan0, y * bd.Stride), dataStride);
-			bitmap.UnlockBits(bd);
-
-			return bitmap;
-		}
-
-		public Bitmap AsBitmap(TextureChannel channel, IPalette pal)
-		{
-			var d = GetData();
-			var dataStride = 4 * Size.Width;
-			var bitmap = new Bitmap(Size.Width, Size.Height);
-			var channelOffset = (int)channel;
-
-			var bd = bitmap.LockBits(bitmap.Bounds(),
-				ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-			unsafe
+			// Convert BGRA to RGBA
+			for (var i = 0; i < Size.Width * Size.Height; i++)
 			{
-				var colors = (uint*)bd.Scan0;
-				for (var y = 0; y < Size.Height; y++)
-				{
-					var dataRowIndex = y * dataStride + channelOffset;
-					var bdRowIndex = y * bd.Stride / 4;
-					for (var x = 0; x < Size.Width; x++)
-					{
-						var paletteIndex = d[dataRowIndex + 4 * x];
-						colors[bdRowIndex + x] = pal[paletteIndex];
-					}
-				}
+				var temp = data[i * 4];
+				data[i * 4] = data[i * 4 + 2];
+				data[i * 4 + 2] = temp;
 			}
 
-			bitmap.UnlockBits(bd);
+			return new Png(data, Size.Width, Size.Height);
+		}
 
-			return bitmap;
+		public Png AsPng(TextureChannel channel, IPalette pal)
+		{
+			var d = GetData();
+			var plane = new byte[Size.Width * Size.Height];
+			var dataStride = 4 * Size.Width;
+			var channelOffset = (int)channel;
+
+			for (var y = 0; y < Size.Height; y++)
+				for (var x = 0; x < Size.Width; x++)
+					plane[y * Size.Width + x] = d[y * dataStride + channelOffset + 4 * x];
+
+			var palColors = new Color[Palette.Size];
+			for (var i = 0; i < Palette.Size; i++)
+				palColors[i] = pal.GetColor(i);
+
+			return new Png(plane, Size.Width, Size.Height, palColors);
 		}
 
 		public void CreateBuffer()
@@ -153,6 +138,10 @@ namespace OpenRA.Graphics
 				return;
 			dirty = true;
 			releaseBufferOnCommit = true;
+
+			// Commit data from the buffer to the texture, allowing the buffer to be released and reclaimed by GC.
+			if (Game.Renderer != null)
+				GetTexture();
 		}
 
 		public void Dispose()

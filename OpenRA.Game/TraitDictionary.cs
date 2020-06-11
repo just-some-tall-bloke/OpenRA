@@ -1,10 +1,11 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
@@ -34,21 +35,19 @@ namespace OpenRA
 		}
 	}
 
+	/// <summary>
+	/// Provides efficient ways to query a set of actors by their traits.
+	/// </summary>
 	class TraitDictionary
 	{
-		// construct this delegate once.
-		static Func<Type, ITraitContainer> doCreateTraitContainer = CreateTraitContainer;
-		static ITraitContainer CreateTraitContainer(Type t)
-		{
-			return (ITraitContainer)typeof(TraitContainer<>).MakeGenericType(t)
-				.GetConstructor(Type.EmptyTypes).Invoke(null);
-		}
+		static readonly Func<Type, ITraitContainer> CreateTraitContainer = t =>
+			(ITraitContainer)typeof(TraitContainer<>).MakeGenericType(t).GetConstructor(Type.EmptyTypes).Invoke(null);
 
-		Dictionary<Type, ITraitContainer> traits = new Dictionary<Type, ITraitContainer>();
+		readonly Dictionary<Type, ITraitContainer> traits = new Dictionary<Type, ITraitContainer>();
 
 		ITraitContainer InnerGet(Type t)
 		{
-			return traits.GetOrAdd(t, doCreateTraitContainer);
+			return traits.GetOrAdd(t, CreateTraitContainer);
 		}
 
 		TraitContainer<T> InnerGet<T>()
@@ -87,13 +86,13 @@ namespace OpenRA
 		public T Get<T>(Actor actor)
 		{
 			CheckDestroyed(actor);
-			return InnerGet<T>().Get(actor.ActorID);
+			return InnerGet<T>().Get(actor);
 		}
 
 		public T GetOrDefault<T>(Actor actor)
 		{
 			CheckDestroyed(actor);
-			return InnerGet<T>().GetOrDefault(actor.ActorID);
+			return InnerGet<T>().GetOrDefault(actor);
 		}
 
 		public IEnumerable<T> WithInterface<T>(Actor actor)
@@ -145,27 +144,28 @@ namespace OpenRA
 				traits.Insert(insertIndex, (T)trait);
 			}
 
-			public T Get(uint actor)
+			public T Get(Actor actor)
 			{
 				var result = GetOrDefault(actor);
 				if (result == null)
-					throw new InvalidOperationException("Actor does not have trait of type `{0}`".F(typeof(T)));
+					throw new InvalidOperationException("Actor {0} does not have trait of type `{1}`".F(actor.Info.Name, typeof(T)));
 				return result;
 			}
 
-			public T GetOrDefault(uint actor)
+			public T GetOrDefault(Actor actor)
 			{
 				++Queries;
-				var index = actors.BinarySearchMany(actor);
-				if (index >= actors.Count || actors[index].ActorID != actor)
+				var index = actors.BinarySearchMany(actor.ActorID);
+				if (index >= actors.Count || actors[index] != actor)
 					return default(T);
-				else if (index + 1 < actors.Count && actors[index + 1].ActorID == actor)
-					throw new InvalidOperationException("Actor {0} has multiple traits of type `{1}`".F(actors[index].Info.Name, typeof(T)));
+				else if (index + 1 < actors.Count && actors[index + 1] == actor)
+					throw new InvalidOperationException("Actor {0} has multiple traits of type `{1}`".F(actor.Info.Name, typeof(T)));
 				else return traits[index];
 			}
 
 			public IEnumerable<T> GetMultiple(uint actor)
 			{
+				// PERF: Custom enumerator for efficiency - using `yield` is slower.
 				++Queries;
 				return new MultipleEnumerable(this, actor);
 			}
@@ -202,6 +202,7 @@ namespace OpenRA
 
 			public IEnumerable<TraitPair<T>> All()
 			{
+				// PERF: Custom enumerator for efficiency - using `yield` is slower.
 				++Queries;
 				return new AllEnumerable(this);
 			}
@@ -255,7 +256,7 @@ namespace OpenRA
 
 				public void Reset() { index = -1; }
 				public bool MoveNext() { return ++index < actors.Count; }
-				public TraitPair<T> Current { get { return new TraitPair<T> { Actor = actors[index], Trait = traits[index] }; } }
+				public TraitPair<T> Current { get { return new TraitPair<T>(actors[index], traits[index]); } }
 				object System.Collections.IEnumerator.Current { get { return Current; } }
 				public void Dispose() { }
 			}

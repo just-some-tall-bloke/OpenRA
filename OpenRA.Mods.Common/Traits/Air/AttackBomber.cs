@@ -1,38 +1,42 @@
 #region Copyright & License Information
 /*
- * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
  * This file is part of OpenRA, which is free software. It is made
  * available to you under the terms of the GNU General Public License
- * as published by the Free Software Foundation. For more information,
- * see COPYING.
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
  */
 #endregion
 
 using System;
 using System.Linq;
 using OpenRA.Activities;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
 	public class AttackBomberInfo : AttackBaseInfo
 	{
-		[Desc("Armament name")]
-		public readonly string Bombs = "primary";
-
-		[Desc("Armament name")]
-		public readonly string Guns = "secondary";
-		public readonly int FacingTolerance = 2;
+		[Desc("Tolerance for attack angle. Range [0, 128], 128 covers 360 degrees.")]
+		public readonly new int FacingTolerance = 2;
 
 		public override object Create(ActorInitializer init) { return new AttackBomber(init.Self, this); }
 	}
 
 	public class AttackBomber : AttackBase, ITick, ISync, INotifyRemovedFromWorld
 	{
-		AttackBomberInfo info;
-		[Sync] Target target;
-		[Sync] bool inAttackRange;
-		[Sync] bool facingTarget = true;
+		readonly AttackBomberInfo info;
+
+		[Sync]
+		Target target;
+
+		[Sync]
+		bool inAttackRange;
+
+		[Sync]
+		bool facingTarget = true;
 
 		public event Action<Actor> OnRemovedFromWorld = self => { };
 		public event Action<Actor> OnEnteredAttackRange = self => { };
@@ -44,41 +48,24 @@ namespace OpenRA.Mods.Common.Traits
 			this.info = info;
 		}
 
-		public void Tick(Actor self)
+		void ITick.Tick(Actor self)
 		{
-			var cp = self.CenterPosition;
-			var bombTarget = Target.FromPos(cp - new WVec(0, 0, cp.Z));
+			var dat = self.World.Map.DistanceAboveTerrain(target.CenterPosition);
+			target = Target.FromPos(target.CenterPosition - new WVec(WDist.Zero, WDist.Zero, dat));
 			var wasInAttackRange = inAttackRange;
 			var wasFacingTarget = facingTarget;
 
 			inAttackRange = false;
 
-			var f = facing.Value.Facing;
-			var facingToTarget = Util.GetFacing(target.CenterPosition - self.CenterPosition, f);
-			facingTarget = Math.Abs(facingToTarget - f) % 256 <= info.FacingTolerance;
+			facingTarget = TargetInFiringArc(self, target, info.FacingTolerance);
 
-			// Bombs drop anywhere in range
-			foreach (var a in Armaments.Where(a => a.Info.Name == info.Bombs))
+			foreach (var a in Armaments)
 			{
 				if (!target.IsInRange(self.CenterPosition, a.MaxRange()))
 					continue;
 
 				inAttackRange = true;
-				a.CheckFire(self, facing.Value, bombTarget);
-			}
-
-			// Guns only fire when approaching the target
-			if (facingTarget)
-			{
-				foreach (var a in Armaments.Where(a => a.Info.Name == info.Guns))
-				{
-					if (!target.IsInRange(self.CenterPosition, a.MaxRange()))
-						continue;
-
-					var t = Target.FromPos(cp - new WVec(0, a.MaxRange().Length / 2, cp.Z).Rotate(WRot.FromFacing(f)));
-					inAttackRange = true;
-					a.CheckFire(self, facing.Value, t);
-				}
+				a.CheckFire(self, facing, target);
 			}
 
 			// Actors without armaments may want to trigger an action when it passes the target
@@ -94,12 +81,12 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void SetTarget(World w, WPos pos) { target = Target.FromPos(pos); }
 
-		public void RemovedFromWorld(Actor self)
+		void INotifyRemovedFromWorld.RemovedFromWorld(Actor self)
 		{
 			OnRemovedFromWorld(self);
 		}
 
-		public override Activity GetAttackActivity(Actor self, Target newTarget, bool allowMove, bool forceAttack)
+		public override Activity GetAttackActivity(Actor self, AttackSource source, Target newTarget, bool allowMove, bool forceAttack, Color? targetLineColor)
 		{
 			throw new NotImplementedException("AttackBomber requires a scripted target");
 		}

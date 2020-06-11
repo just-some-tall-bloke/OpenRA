@@ -1,7 +1,7 @@
 version: 1.0.{build}
+image: Visual Studio 2017
 
 environment:
-  NSIS_ROOT: C:\nsis
   CoverityProjectToken:
     secure: BYP5qnptMazSCwTwgiFHlfqZd7BM3bwTRq2Cbs++ofg=
   CoverityNotificationEmail:
@@ -9,66 +9,34 @@ environment:
 
 install:
 
-cache:
-  - nsissetup.exe -> appveyor.yaml
-  - NsProcess.zip -> appveyor.yaml
-  - thirdparty\download -> thirdparty\fetch-thirdparty-deps.ps1
-
-before_build:
-- make dependencies
-
-build:
-  project: OpenRA.sln
-  verbosity: minimal
-
-after_build:
-- ps: |
-    if ($env:APPVEYOR_SCHEDULED_BUILD -eq "True")
-    {
-        cov-build.exe --dir cov-int make all
-        nuget.exe install PublishCoverity -ExcludeVersion
-        PublishCoverity\tools\PublishCoverity.exe compress -o coverity.zip -i cov-int
-        $version = Get-Date -format s
-        PublishCoverity\tools\PublishCoverity.exe publish `
-          -t "$env:CoverityProjectToken" `
-          -e "$env:CoverityNotificationEmail" `
-          -r "$env:APPVEYOR_REPO_NAME" `
-          -z coverity.zip `
-          -d "AppVeyor scheduled build ($env:APPVEYOR_BUILD_VERSION)." `
-          --codeVersion "$version"
-    }
-
-before_test:
-- ps: |
-    if ($env:APPVEYOR_SCHEDULED_BUILD -eq "True")
-    {
-         choco install resharper-clt -y
-         dupFinder /output=dupReport.xml /show-text OpenRA.sln
-         choco install xmlstarlet -y
-         xml transform dupFinder.xslt dupReport.xml > dupReport.html
-         choco install pandoc -y
-    }
+build_script:
+  - make all
 
 test_script:
-  - nunit-console-x86.exe OpenRA.Test.dll
+  - nunit3-console OpenRA.Test.dll --result=myresults.xml;format=AppVeyor
 
 after_test:
-  - choco install pandoc -y
-  - '%LOCALAPPDATA%\Pandoc\pandoc.exe -o README.html README.md'
-  - '%LOCALAPPDATA%\Pandoc\pandoc.exe -o CONTRIBUTING.html CONTRIBUTING.md'
+  - appveyor DownloadFile "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP" -FileName IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP
   - appveyor DownloadFile "https://raw.githubusercontent.com/wiki/OpenRA/OpenRA/Changelog.md" -FileName Changelog.md
-  - '%LOCALAPPDATA%\Pandoc\pandoc.exe -o Changelog.html CHANGELOG.md'
   - make docs
-  - '%LOCALAPPDATA%\Pandoc\pandoc.exe -o DOCUMENTATION.html DOCUMENTATION.md'
-  - '%LOCALAPPDATA%\Pandoc\pandoc.exe -o Lua-API.html Lua-API.md'
-  - cp OpenRA.Game/OpenRA.ico .
-  - if not exist nsissetup.exe appveyor DownloadFile "http://downloads.sourceforge.net/project/nsis/NSIS 2/2.46/nsis-2.46-setup.exe" -FileName nsissetup.exe
-  - nsissetup /S /D=%NSIS_ROOT%
-  - '%NSIS_ROOT%\makensis /DSRCDIR="%APPVEYOR_BUILD_FOLDER%" /DDEPSDIR="%APPVEYOR_BUILD_FOLDER%\thirdparty\download\windows" /V3 packaging/windows/OpenRA.nsi'
-  - move /Y %APPVEYOR_BUILD_FOLDER%\packaging\windows\OpenRA.Setup.exe %APPVEYOR_BUILD_FOLDER%\OpenRA-%APPVEYOR_REPO_TAG_NAME%.exe
+  - ps: dir *.md | % {gc $_ -Raw | .\ConvertFrom-Markdown.ps1 | Out-File -FilePath "$($_.Name.TrimEnd(".md")).html"}
+  - ps: (Get-Content "${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs.in").replace('DISPLAY_NAME', 'Red Alert').replace('MOD_ID', 'ra').replace('FAQ_URL', 'http://wiki.openra.net/FAQ') | Set-Content "${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs"
+  - ps: C:\"Program Files (x86)"\"Microsoft Visual Studio"\2017\Community\MSBuild\15.0\Bin\Roslyn\csc.exe /noconfig /platform:x64 /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:"${env:APPVEYOR_BUILD_FOLDER}\OpenRA.Game.exe" /out:"${env:APPVEYOR_BUILD_FOLDER}\RedAlert.exe" /win32icon:"${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\RedAlert.ico" /target:winexe ${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs
+  - ps: (Get-Content "${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs.in").replace('DISPLAY_NAME', 'Tiberian Dawn').replace('MOD_ID', 'cnc').replace('FAQ_URL', 'http://wiki.openra.net/FAQ') | Set-Content "${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs"
+  - ps: C:\"Program Files (x86)"\"Microsoft Visual Studio"\2017\Community\MSBuild\15.0\Bin\Roslyn\csc.exe /noconfig /platform:x64 /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:"${env:APPVEYOR_BUILD_FOLDER}\OpenRA.Game.exe" /out:"${env:APPVEYOR_BUILD_FOLDER}\TiberianDawn.exe" /win32icon:"${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\TiberianDawn.ico" /target:winexe ${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs
+  - ps: (Get-Content "${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs.in").replace('DISPLAY_NAME', 'Dune 2000').replace('MOD_ID', 'd2k').replace('FAQ_URL', 'http://wiki.openra.net/FAQ') | Set-Content "${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs"
+  - ps: C:\"Program Files (x86)"\"Microsoft Visual Studio"\2017\Community\MSBuild\15.0\Bin\Roslyn\csc.exe /noconfig /platform:x64 /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:"${env:APPVEYOR_BUILD_FOLDER}\OpenRA.Game.exe" /out:"${env:APPVEYOR_BUILD_FOLDER}\Dune2000.exe" /win32icon:"${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\Dune2000.ico" /target:winexe ${env:APPVEYOR_BUILD_FOLDER}\packaging\windows\WindowsLauncher.cs
+  - ps: cp packaging\windows\OpenRA.ico .
+  - ps: cp packaging\windows\RedAlert.ico .
+  - ps: cp packaging\windows\TiberianDawn.ico .
+  - ps: cp packaging\windows\Dune2000.ico .
+  - if defined APPVEYOR_REPO_TAG_NAME set VERSION=%APPVEYOR_REPO_TAG_NAME%
+  - if not defined APPVEYOR_REPO_TAG_NAME set VERSION=%APPVEYOR_REPO_COMMIT:~0,7%
+  - '"C:\Program Files (x86)\NSIS\makensis.exe" /DSRCDIR="%APPVEYOR_BUILD_FOLDER%" /DTAG="git-%VERSION%" /DSUFFIX=" (dev)" /V3 packaging/windows/OpenRA.nsi'
+  - move /Y %APPVEYOR_BUILD_FOLDER%\packaging\windows\OpenRA.Setup.exe %APPVEYOR_BUILD_FOLDER%\OpenRA-%VERSION%.exe
 
 artifacts:
-  - path: OpenRA-$(APPVEYOR_REPO_TAG_NAME).exe
+  - path: OpenRA-$(VERSION).exe
     name: Installer
   - path: coverity.zip
     name: Coverity Build

@@ -1,19 +1,20 @@
 #region Copyright & License Information
 /*
-  * Copyright 2007-2015 The OpenRA Developers (see AUTHORS)
-  * This file is part of OpenRA, which is free software. It is made
-  * available to you under the terms of the GNU General Public License
-  * as published by the Free Software Foundation. For more information,
-  * see COPYING.
-  */
+ * Copyright 2007-2020 The OpenRA Developers (see AUTHORS)
+ * This file is part of OpenRA, which is free software. It is made
+ * available to you under the terms of the GNU General Public License
+ * as published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version. For more
+ * information, see COPYING.
+ */
 #endregion
 
-using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Commands;
+using OpenRA.Mods.Common.Graphics;
+using OpenRA.Primitives;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
@@ -21,14 +22,14 @@ namespace OpenRA.Mods.Common.Traits
 	[Desc("Renders a debug overlay showing the terrain cells. Attach this to the world actor.")]
 	public class TerrainGeometryOverlayInfo : TraitInfo<TerrainGeometryOverlay> { }
 
-	public class TerrainGeometryOverlay : IPostRender, IWorldLoaded, IChatCommand
+	public class TerrainGeometryOverlay : IRenderAnnotations, IWorldLoaded, IChatCommand
 	{
 		const string CommandName = "terrainoverlay";
-		const string CommandDesc = "Toggles the terrain geometry overlay";
+		const string CommandDesc = "toggles the terrain geometry overlay.";
 
 		public bool Enabled;
 
-		public void WorldLoaded(World w, WorldRenderer wr)
+		void IWorldLoaded.WorldLoaded(World w, WorldRenderer wr)
 		{
 			var console = w.WorldActor.TraitOrDefault<ChatCommands>();
 			var help = w.WorldActor.TraitOrDefault<HelpCommand>();
@@ -40,65 +41,62 @@ namespace OpenRA.Mods.Common.Traits
 			help.RegisterHelp(CommandName, CommandDesc);
 		}
 
-		public void InvokeCommand(string name, string arg)
+		void IChatCommand.InvokeCommand(string name, string arg)
 		{
 			if (name == CommandName)
 				Enabled ^= true;
 		}
 
-		public void RenderAfterWorld(WorldRenderer wr, Actor self)
+		IEnumerable<IRenderable> IRenderAnnotations.RenderAnnotations(Actor self, WorldRenderer wr)
 		{
 			if (!Enabled)
-				return;
+				yield break;
 
 			var map = wr.World.Map;
-			var tileSet = wr.World.TileSet;
-			var lr = Game.Renderer.WorldLineRenderer;
-			var colors = wr.World.TileSet.HeightDebugColors;
+			var tileSet = wr.World.Map.Rules.TileSet;
+			var colors = tileSet.HeightDebugColors;
 			var mouseCell = wr.Viewport.ViewToWorld(Viewport.LastMousePos).ToMPos(wr.World.Map);
 
 			foreach (var uv in wr.Viewport.AllVisibleCells.CandidateMapCoords)
 			{
-				if (!map.MapHeight.Value.Contains(uv))
+				if (!map.Height.Contains(uv) || self.World.ShroudObscures(uv))
 					continue;
 
-				var height = (int)map.MapHeight.Value[uv];
-				var tile = map.MapTiles.Value[uv];
-				var ti = tileSet.GetTileInfo(tile);
-				var ramp = ti != null ? (int)ti.RampType : 0;
+				var height = (int)map.Height[uv];
+				var r = map.Grid.Ramps[map.Ramp[uv]];
+				var pos = map.CenterOfCell(uv.ToCPos(map)) - new WVec(0, 0, r.CenterHeightOffset);
+				var width = uv == mouseCell ? 3 : 1;
 
-				var corners = map.CellCorners[ramp];
-				var color = corners.Select(c => colors[height + c.Z / 512]).ToArray();
-				var pos = map.CenterOfCell(uv.ToCPos(map));
-				var screen = corners.Select(c => wr.ScreenPxPosition(pos + c).ToFloat2()).ToArray();
-
-				if (uv == mouseCell)
-					lr.LineWidth = 3;
-
-				for (var i = 0; i < 4; i++)
+				// Colors change between points, so render separately
+				foreach (var p in r.Polygons)
 				{
-					var j = (i + 1) % 4;
-					lr.DrawLine(screen[i], screen[j], color[i], color[j]);
+					for (var i = 0; i < p.Length; i++)
+					{
+						var j = (i + 1) % p.Length;
+						var start = pos + p[i];
+						var end = pos + p[j];
+						var startColor = colors[height + p[i].Z / 512];
+						var endColor = colors[height + p[j].Z / 512];
+						yield return new LineAnnotationRenderable(start, end, width, startColor, endColor);
+					}
 				}
-
-				lr.LineWidth = 1;
 			}
 
 			// Projected cell coordinates for the current cell
-			var projectedCorners = map.CellCorners[0];
-			lr.LineWidth = 3;
+			var projectedCorners = map.Grid.Ramps[0].Corners;
 			foreach (var puv in map.ProjectedCellsCovering(mouseCell))
 			{
 				var pos = map.CenterOfCell(((MPos)puv).ToCPos(map));
-				var screen = projectedCorners.Select(c => wr.ScreenPxPosition(pos + c - new WVec(0, 0, pos.Z)).ToFloat2()).ToArray();
 				for (var i = 0; i < 4; i++)
 				{
 					var j = (i + 1) % 4;
-					lr.DrawLine(screen[i], screen[j], Color.Navy);
+					var start = pos + projectedCorners[i] - new WVec(0, 0, pos.Z);
+					var end = pos + projectedCorners[j] - new WVec(0, 0, pos.Z);
+					yield return new LineAnnotationRenderable(start, end, 3, Color.Navy);
 				}
 			}
-
-			lr.LineWidth = 1;
 		}
+
+		bool IRenderAnnotations.SpatiallyPartitionable { get { return false; } }
 	}
 }
